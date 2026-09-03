@@ -5,6 +5,7 @@
 <h1>Add a New Note</h1>
 
 <form id="suggestion-form" action="/add_note" method="post" >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <h3>Course Code:</h3>
         <select name="courseID" required>
                 <option value="">-- Select Course --</option>

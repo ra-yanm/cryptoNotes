@@ -9,7 +9,7 @@
             <h1>{{ profile.name }}</h1>
             <p class="profile-identity">@{{ profile.user_ID }} · {{ profile.user_type|title }}</p>
         </div>
-        <button type="button" class="profile-edit-button" onclick="openProfileEditor()">Edit</button>
+        <button type="button" class="profile-edit-button" data-profile-action="open">Edit</button>
     </div>
 
     <div class="profile-details">
@@ -22,9 +22,10 @@
 </section>
 
 <div id="profile-editor" class="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title" hidden>
-    <div class="profile-modal-backdrop" onclick="closeProfileEditor()"></div>
+    <div class="profile-modal-backdrop" data-profile-action="close"></div>
     <form class="profile-form" method="post" action="{{ url_for('profile') }}">
-        <button type="button" class="profile-modal-close" aria-label="Close" onclick="closeProfileEditor()">&times;</button>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="button" class="profile-modal-close" aria-label="Close" data-profile-action="close">&times;</button>
         <p class="profile-kicker">Personal details</p>
         <h2 id="profile-editor-title">Edit your profile</h2>
         <label for="personal_phn">Phone number</label>
@@ -34,24 +35,10 @@
         <label for="bio">Bio</label>
         <textarea id="bio" name="bio" rows="5" maxlength="1000">{{ profile.bio or '' }}</textarea>
         <div class="profile-form-actions">
-            <button type="button" class="profile-cancel-button" onclick="closeProfileEditor()">Cancel</button>
+            <button type="button" class="profile-cancel-button" data-profile-action="close">Cancel</button>
             <button type="submit" class="profile-save-button">Save changes</button>
         </div>
     </form>
 </div>
 
-<script>
-    function openProfileEditor() {
-        document.getElementById('profile-editor').hidden = false;
-        document.getElementById('personal_phn').focus();
-    }
-
-    function closeProfileEditor() {
-        document.getElementById('profile-editor').hidden = true;
-    }
-
-    document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') closeProfileEditor();
-    });
-</script>
 {% endblock %}

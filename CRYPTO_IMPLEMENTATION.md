@@ -146,3 +146,15 @@ python web_app.py
 ```
 
 For Gmail, use an app password rather than the normal account password. The database password, Flask session secret, SMTP credentials, and private key directory are all configurable through `.env`.
+
+## Web Security Controls
+
+The web application enables `HttpOnly` cookies so client-side JavaScript cannot read the session cookie, `SameSite=Lax` to reduce cross-site request forgery, and configurable `Secure` cookies for HTTPS deployments through `SESSION_COOKIE_SECURE=true`. Keep it `false` only for local HTTP development.
+
+Flask-WTF `CSRFProtect` validates a token on every browser `POST`. WTForms generate tokens automatically, and manual forms include the token explicitly. API requests are kept behind the web application's server-side request boundary.
+
+The session is cleared and rebuilt after successful login OTP verification, which rotates the signed session contents and prevents an attacker from fixing a pre-authentication session. Authenticated sessions expire after 30 minutes of inactivity. The `before_request` hook clears expired sessions before redirecting to login.
+
+Jinja autoescaping is retained for all user- and database-originated text. Stored `|safe` output was removed, preventing notes or suggestions from becoming executable HTML. Inline JavaScript and inline event handlers were moved to `static/app.js`; the response Content Security Policy allows scripts only from the application origin. Additional headers disable framing, MIME sniffing, and unsafe referrer disclosure.
+
+These controls reduce XSS, session theft, session fixation, CSRF, clickjacking, and DOM injection risk. They do not replace HTTPS, secure server deployment, dependency updates, authorization checks, or a production secret manager.

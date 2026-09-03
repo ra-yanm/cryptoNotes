@@ -16,7 +16,7 @@
     <div id="suggestion-section">
     <div style="display: flex; gap: 10px;">
         {% if current_user.user_type!='alumni' %}
-            <button onclick="showSuggestionForm()">
+            <button type="button" data-toggle="suggestion-form">
             {% if current_user.user_type=='student' %}
                 Suggest an Edit
             {% else %}
@@ -26,6 +26,7 @@
         {% endif %}
         {% if current_user.user_type == 'faculty' %}
         <form action="/hide_note" method="post" >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="course" value="{{ course }}">
             <input type="hidden" name="noteID" value="{{ noteID }}">
             {% if notes.student_view== 1 %}
@@ -52,6 +53,7 @@
         
     </div>
     <form id="suggestion-form" action="/submit_suggestion" method="post" style="display:none;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <h3>Your Suggestion:</h3>
         <textarea name="suggestion_note" rows="13" cols="100" required>{{ notes.note }}</textarea>
         <input type="hidden" name="course" value="{{ course }}">
@@ -72,16 +74,5 @@
 {% endif %}
 <br>
         <a href="/notes?course={{ course }}" >← Back</a>
-
-<script>
-    function showSuggestionForm() {
-        var form = document.getElementById("suggestion-form");
-        if (form.style.display === "none") {
-            form.style.display = "block";
-        } else {
-            form.style.display = "none";
-        }
-    }
-</script>
 
 {% endblock %}

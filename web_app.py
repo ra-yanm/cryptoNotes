@@ -1,9 +1,12 @@
 import os
+import time
 from functools import wraps
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask_wtf.csrf import CSRFProtect
+from datetime import timedelta
 from forms import OTPForm, RegistrationForm
 
 
@@ -12,7 +15,39 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("WEB_SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("WEB_SECRET_KEY must be set in .env or the environment")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
+    WTF_CSRF_TIME_LIMIT=3600,
+)
+csrf = CSRFProtect(app)
 API_URL = os.getenv("API_URL", "http://127.0.0.1:5000/api")
+
+
+@app.before_request
+def enforce_idle_timeout():
+    if not session.get("user"):
+        return None
+    last_activity = session.get("last_activity", 0)
+    now = time.time()
+    if now - last_activity > app.permanent_session_lifetime.total_seconds():
+        session.clear()
+        flash("Your session expired. Please log in again.")
+        return redirect(url_for("login"))
+    session["last_activity"] = now
+    session.permanent = True
+    return None
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+    return response
 
 
 class User:
@@ -131,6 +166,9 @@ def verify_login():
         })
         if result:
             session.pop("login_challenge", None)
+            session.clear()
+            session.permanent = True
+            session["last_activity"] = time.time()
             session["user"] = result["user"]
             flash("Logged in successfully!")
             return redirect(url_for("home"))

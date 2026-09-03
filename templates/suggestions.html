@@ -28,12 +28,13 @@
                 {% for suggestion in suggestions %}
                 <tr>
                     <td class="suggestion-text">
-                        {{ suggestion.highlighted_html|safe }}
+                        {{ suggestion.highlighted_html }}
                     </td>
                     <td style="text-align: center;">{{ suggestion.suggested_by }}</td>
                     <td>
                         <div class="action-buttons">
                         <form action="{{ url_for('approve_suggestion') }}" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="suggestionID" value="{{ suggestion.suggestionID }}">
                             <input type="hidden" name="suggestion" value="{{ suggestion.suggestion }}">
                             <input type="hidden" name="noteID" value="{{ noteID }}">
@@ -42,6 +43,7 @@
                             <button type="submit" class="approve-btn">Approve</button>
                         </form>
                         <form action="{{ url_for('approve_suggestion') }}" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="suggestionID" value="{{ suggestion.suggestionID }}">
                             <input type="hidden" name="noteID" value="{{ noteID }}">
                             <input type="hidden" name="courseID" value="{{ course }}">

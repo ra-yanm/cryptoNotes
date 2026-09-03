@@ -34,7 +34,7 @@
                 {% for message in messages %}
                     <div class="flash-message">
                         {{ message }}
-                        <button class="close-btn" onclick="this.parentElement.style.display='none';">&times;</button>
+                        <button class="close-btn" data-dismiss="flash" type="button">&times;</button>
                     </div>
                 {% endfor %}
             {% endif %}
@@ -48,20 +48,6 @@
 
 
 
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const flashMessages = document.querySelectorAll('.flash-message');
-        flashMessages.forEach(message => {
-            setTimeout(() => {
-                // Animate both opacity and transform to create a slide-out fade effect
-                message.style.opacity = '0';
-                message.style.transform = 'translateX(100%)';
-
-                // After the transition, remove the element
-                setTimeout(() => message.remove(), 500);
-            }, 3000); // 3 seconds
-        });
-    });
-</script>
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

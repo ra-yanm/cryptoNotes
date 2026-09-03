@@ -26,12 +26,13 @@
                     {{suggestion.title }}
                 </td>
                 <td class="suggestion-text">
-                    {{ suggestion.note|safe }}
+                    {{ suggestion.note }}
                 </td>
                 <td style="text-align: center;">{{ suggestion.post_by }}</td>
                 <td>
                     <div class="action-buttons">
                     <form action="{{ url_for('approve_note') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="pending_ID" value="{{ suggestion.ID }}">
                         <input type="hidden" name="title" value="{{ suggestion.title }}">
                         <input type="hidden" name="note" value="{{ suggestion.note }}">
@@ -40,6 +41,7 @@
                         <button type="submit" class="approve-btn">Approve</button>
                     </form>
                     <form action="{{ url_for('approve_note') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="pending_ID" value="{{ suggestion.ID }}">
                         <input type="hidden" name="courseID" value="{{ course }}">
                         <input type="hidden" name="buttton" value="reject">

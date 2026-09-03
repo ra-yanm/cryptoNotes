@@ -6,6 +6,7 @@
 <h1>Welcome!</h1>
 <p>Please login with your ID and password.</p><br>
 <form class="login-form" method="POST" action="{{ url_for('login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h4 style="text-align: left;">User ID / Email</h4>
     <input type="text" name="userID" placeholder=" Enter User ID / Email" required>
     <br>

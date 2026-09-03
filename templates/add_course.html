@@ -4,6 +4,7 @@
 {% block content %}
 
 <form id="suggestion-form" action="/add_course" method="post" >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <h3>Course Code:</h3>
         <textarea name="courseID" rows="1" cols="80" required></textarea>
         <h3>Course Title:</h3>
