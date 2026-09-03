@@ -32,8 +32,8 @@ USE `flaskDB447`;
 DROP TABLE IF EXISTS `courses`;
 CREATE TABLE `courses` (
   `courseID` char(6) NOT NULL,
-  `title` varchar(30) NOT NULL,
-  `description` varchar(1000) DEFAULT NULL,
+  `title` text NOT NULL,
+  `description` text DEFAULT NULL,
   `coordinator` varchar(20) NOT NULL DEFAULT 'teacher1'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -61,8 +61,8 @@ DROP TABLE IF EXISTS `notes`;
 CREATE TABLE `notes` (
   `courseID` char(6) NOT NULL,
   `noteID` int(11) NOT NULL,
-  `title` varchar(200) NOT NULL,
-  `note` varchar(2000) DEFAULT NULL,
+  `title` text NOT NULL,
+  `note` text DEFAULT NULL,
   `student_view` tinyint(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -89,8 +89,8 @@ DROP TABLE IF EXISTS `note_pending`;
 CREATE TABLE `note_pending` (
   `ID` int(11) NOT NULL,
   `courseID` varchar(6) NOT NULL,
-  `title` varchar(200) NOT NULL,
-  `note` varchar(2000) NOT NULL,
+  `title` text NOT NULL,
+  `note` text NOT NULL,
   `post_by` varchar(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -114,7 +114,7 @@ CREATE TABLE `note_suggestions` (
   `courseID` char(6) NOT NULL,
   `noteID` int(11) NOT NULL,
   `suggestionID` int(11) NOT NULL,
-  `suggestion` varchar(2000) NOT NULL,
+  `suggestion` text NOT NULL,
   `suggested_by` varchar(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -160,15 +160,38 @@ INSERT INTO `student` (`student_id`, `user_ID`, `cgpa`, `department`) VALUES
 DROP TABLE IF EXISTS `user`;
 CREATE TABLE `user` (
   `user_ID` varchar(20) NOT NULL,
-  `email` varchar(30) NOT NULL,
-  `password` varchar(22) NOT NULL,
+  `email` varchar(254) NOT NULL,
+  `password` text NOT NULL,
   `name` varchar(25) NOT NULL,
   `department` varchar(3) NOT NULL,
   `user_type` varchar(10) NOT NULL,
   `bio` text DEFAULT NULL,
   `personal_phn` varchar(11) DEFAULT NULL,
   `discord_id` varchar(100) DEFAULT NULL,
+  `email_verified` tinyint(1) NOT NULL DEFAULT 1,
   CONSTRAINT `user_personal_phn_chk` CHECK (`personal_phn` IS NULL OR `personal_phn` REGEXP '^[0-9]{11}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- RSA-encrypted login records. Private keys are kept outside the database.
+DROP TABLE IF EXISTS `secure_login`;
+CREATE TABLE `secure_login` (
+  `identity_hash` char(64) NOT NULL,
+  `encrypted_credentials` text NOT NULL,
+  PRIMARY KEY (`identity_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- One-time registration and login verification challenges.
+DROP TABLE IF EXISTS `account_otp`;
+CREATE TABLE `account_otp` (
+  `challenge_id` char(64) NOT NULL,
+  `user_ID` varchar(20) DEFAULT NULL,
+  `email` varchar(254) NOT NULL,
+  `purpose` varchar(20) NOT NULL,
+  `otp_hash` char(64) NOT NULL,
+  `payload` text DEFAULT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`challenge_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --

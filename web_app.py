@@ -2,11 +2,16 @@ import os
 from functools import wraps
 
 import requests
+from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from forms import OTPForm, RegistrationForm
 
 
+load_dotenv()
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.getenv("WEB_SECRET_KEY", "change-this-secret")
+app.secret_key = os.getenv("WEB_SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("WEB_SECRET_KEY must be set in .env or the environment")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:5000/api")
 
 
@@ -76,9 +81,60 @@ def login():
     result = api_request("POST", "/login", json={"userID": request.form["userID"], "password": request.form["password"]})
     if not result:
         return redirect(url_for("login"))
-    session["user"] = result["user"]
-    flash("Logged in successfully!")
-    return redirect(url_for("home"))
+    session["login_challenge"] = result["challenge_id"]
+    return redirect(url_for("verify_login"))
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if session.get("user"):
+        return redirect(url_for("home"))
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        result = api_request("POST", "/register", json={
+            "user_ID": form.user_id.data,
+            "email": form.email.data,
+            "name": form.name.data,
+            "department": form.department.data,
+            "password": form.password.data,
+        })
+        if result:
+            session["registration_challenge"] = result["challenge_id"]
+            return redirect(url_for("verify_registration"))
+    return render_template("register.html", form=form)
+
+
+@app.route("/verify-registration", methods=["GET", "POST"])
+def verify_registration():
+    form = OTPForm()
+    if not session.get("registration_challenge"):
+        return redirect(url_for("register"))
+    if form.validate_on_submit():
+        result = api_request("POST", "/verify-registration", json={
+            "challenge_id": session["registration_challenge"], "otp": form.otp.data,
+        })
+        if result:
+            session.pop("registration_challenge", None)
+            flash(result["message"])
+            return redirect(url_for("login"))
+    return render_template("verify_otp.html", form=form, title="Verify your email")
+
+
+@app.route("/verify-login", methods=["GET", "POST"])
+def verify_login():
+    form = OTPForm()
+    if not session.get("login_challenge"):
+        return redirect(url_for("login"))
+    if form.validate_on_submit():
+        result = api_request("POST", "/verify-login", json={
+            "challenge_id": session["login_challenge"], "otp": form.otp.data,
+        })
+        if result:
+            session.pop("login_challenge", None)
+            session["user"] = result["user"]
+            flash("Logged in successfully!")
+            return redirect(url_for("home"))
+    return render_template("verify_otp.html", form=form, title="Verify login")
 
 
 @app.get("/logout")
