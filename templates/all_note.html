@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Notes{% endblock %}
+
+{% block content %}
+
+{% if course %}
+<h1> {{course}} : {{course_info.title}} </h1>
+<hr>
+<br>
+<p>{{course_info.description}}</p>
+<br>
+{% if current_user.user_type=='faculty' %}
+<hr style=" border: none; border-top: 1px solid #5e5e5e;">
+<br>
+    <div style="gap: 10px; display: flex; flex-direction: row-reverse;">
+        <form action="/deleting" method="get" >
+            <input type="hidden" name="course" value="{{ course_info.courseID }}">
+            <button type="submit" 
+            style="color:#fe9797; 
+            background-color:#232323;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;">
+            DELETE Course</button>
+
+        </form>
+        {% if check_pending_note( course_info.courseID ) %}
+            <form action="/approve_note" method="get" > 
+                <input type="hidden" name="course" value="{{ course_info.courseID }}">
+                <button type="submit" 
+                style="background-color: #b0f0dd;
+                color: #191919;
+                padding: 10px 20px;
+                font-size: 16px;
+                border: none;
+                border-radius: 5px;
+                text-decoration: none;
+                font-weight: bold;
+                cursor: pointer;">
+                [View Pending Notes for this Course]</button>
+
+                </form>
+        {% endif %}
+    </div>
+{% endif %}
+{% if notes %}
+<br>
+
+<h3>
+    Available Notes 
+    
+</h3>
+<hr>
+{% else %}
+
+<br>
+<p><i><b>No notes were found for this course.</b></i></p>
+{% endif %}
+
+
+<ol id="p2">
+    {% for note in notes %}
+    {% if current_user.user_type == 'faculty' %}
+    <a id="nlist" href="?course={{note.courseID}}&L={{note.noteID}}">
+        <li>
+            {{loop.index}}. {{note.courseID}} | {{note.title}}
+            {% if note.student_view== 0 %}
+            <mark>[Hidden]</mark>
+            {% endif %}
+            {% if check_suggestion( note.noteID ) %}
+            <mark>[Suggestions Pending]</mark>
+            {% endif %}
+        </li>
+    </a>
+
+    {% else %}
+        {% if note.student_view == 1 %}
+            <a id="nlist" href="?course={{note.courseID}}&L={{note.noteID}}">
+                <li>
+                {{loop.index}}. {{note.courseID}} | {{note.title}}
+                {% if check_suggestion( note.noteID ) and current_user.user_type=='st' %}
+                    <mark>[Suggestions Pending]</mark>
+                {% endif %}
+                </li>
+             </a>
+        {% endif %}
+    {% endif %}
+    {% endfor %}
+</ol>
+
+<div style="text-align: right;">
+    {% if current_user.user_type != 'alumni' %}
+    <br>
+    <hr>
+    <br>
+        <a href="/add_note" style="
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #b0f0dd;
+            color: #191919;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        ">+ Add Note</a>
+        
+    {% endif %}
+    
+</div>
+<br>
+        <a href="/notes" >← Back to Notes</a>
+{% else %}
+<h1>Available Courses</h1>
+<hr>
+<br>
+<div class="course-container">
+    {% for course in courses %}
+    <form action="" method="get" class="course-form">
+        <input type="hidden" name="course" value="{{ course.courseID }}">
+        <button type="submit" class="course-btn">
+            {{ course.courseID }}
+        </button>
+    </form>
+    {% endfor %}
+</div>
+<div style="text-align: right;">
+    {% if current_user.user_type == 'faculty' %}
+    <br>
+    <br>
+    <hr>
+    <br>
+        <a href="/add_course" style="
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #b0f0dd;
+            color: #191919;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        ">+ Add New Course</a>
+
+        
+    {% endif %}
+</div>
+
+{% endif %}
+
+
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Pending Notes{% endblock %}
+
+{% block content %}
+<h1>Course: {{course}} </h1>
+<hr>
+<br>
+
+<section class="suggestions-table">
+    <h2>Pending Notes</h2>
+    {% if suggestions %}
+    <table>
+        <thead>
+            <tr>
+                <th> Title</th>
+                <th> Note</th>
+                <th style="text-align: center;">Posted By</th>
+                <th style="text-align: center;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for suggestion in suggestions %}
+            <tr>
+                <td class="suggestion-text"> 
+                    {{suggestion.title }}
+                </td>
+                <td class="suggestion-text">
+                    {{ suggestion.note|safe }}
+                </td>
+                <td style="text-align: center;">{{ suggestion.post_by }}</td>
+                <td>
+                    <div class="action-buttons">
+                    <form action="{{ url_for('approve_note') }}" method="post">
+                        <input type="hidden" name="pending_ID" value="{{ suggestion.ID }}">
+                        <input type="hidden" name="title" value="{{ suggestion.title }}">
+                        <input type="hidden" name="note" value="{{ suggestion.note }}">
+                        <input type="hidden" name="courseID" value="{{ course }}">
+                        <input type="hidden" name="buttton" value="approve">
+                        <button type="submit" class="approve-btn">Approve</button>
+                    </form>
+                    <form action="{{ url_for('approve_note') }}" method="post">
+                        <input type="hidden" name="pending_ID" value="{{ suggestion.ID }}">
+                        <input type="hidden" name="courseID" value="{{ course }}">
+                        <input type="hidden" name="buttton" value="reject">
+                        <button type="submit" class="reject-btn">Reject</button>
+                    </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pending notes for this course.</p>
+    {% endif %}
+</section>
+
+{% endblock %}

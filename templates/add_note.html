@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Add a New Note{% endblock %}
+
+{% block content %}
+<h1>Add a New Note</h1>
+
+<form id="suggestion-form" action="/add_note" method="post" >
+        <h3>Course Code:</h3>
+        <select name="courseID" required>
+                <option value="">-- Select Course --</option>
+                {% for course in courses %}
+                <option value="{{course.courseID}}">{{course.courseID}}</option>
+                {% endfor %}
+        </select>
+        <h3>Note Title:</h3>
+        <textarea name="title" rows="1" cols="80" required></textarea>
+        <h3>Note Content:</h3>
+        <textarea name="note" rows="10" cols="80" required></textarea>
+        {% if current_user.user_type=='faculty' %}
+        <label for="student_view">Visible to Students:</label>
+        <input type="checkbox" id="student_view" name="student_view" value="1" checked style="width: unset;"><br><br>
+        {% endif %}
+        <br>
+        <button type="submit">Add Note</button>
+        <br>
+</form>
+{% endblock %}

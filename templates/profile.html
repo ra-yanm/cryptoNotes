@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    <div class="profile-header">
+        <div>
+            <p class="profile-kicker">CampusLink profile</p>
+            <h1>{{ profile.name }}</h1>
+            <p class="profile-identity">@{{ profile.user_ID }} · {{ profile.user_type|title }}</p>
+        </div>
+        <button type="button" class="profile-edit-button" onclick="openProfileEditor()">Edit</button>
+    </div>
+
+    <div class="profile-details">
+        <div><span>Email</span><strong>{{ profile.email }}</strong></div>
+        <div><span>Department</span><strong>{{ profile.department }}</strong></div>
+        <div><span>Phone</span><strong>{{ profile.personal_phn or 'Not provided' }}</strong></div>
+        <div><span>Discord ID</span><strong>{{ profile.discord_id or 'Not provided' }}</strong></div>
+        <div class="profile-bio"><span>Bio</span><strong>{{ profile.bio or 'No bio yet.' }}</strong></div>
+    </div>
+</section>
+
+<div id="profile-editor" class="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title" hidden>
+    <div class="profile-modal-backdrop" onclick="closeProfileEditor()"></div>
+    <form class="profile-form" method="post" action="{{ url_for('profile') }}">
+        <button type="button" class="profile-modal-close" aria-label="Close" onclick="closeProfileEditor()">&times;</button>
+        <p class="profile-kicker">Personal details</p>
+        <h2 id="profile-editor-title">Edit your profile</h2>
+        <label for="personal_phn">Phone number</label>
+        <input id="personal_phn" name="personal_phn" value="{{ profile.personal_phn or '' }}" pattern="[0-9]{11}" maxlength="11" inputmode="numeric" placeholder="11 digits">
+        <label for="discord_id">Discord ID</label>
+        <input id="discord_id" name="discord_id" value="{{ profile.discord_id or '' }}" maxlength="100">
+        <label for="bio">Bio</label>
+        <textarea id="bio" name="bio" rows="5" maxlength="1000">{{ profile.bio or '' }}</textarea>
+        <div class="profile-form-actions">
+            <button type="button" class="profile-cancel-button" onclick="closeProfileEditor()">Cancel</button>
+            <button type="submit" class="profile-save-button">Save changes</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function openProfileEditor() {
+        document.getElementById('profile-editor').hidden = false;
+        document.getElementById('personal_phn').focus();
+    }
+
+    function closeProfileEditor() {
+        document.getElementById('profile-editor').hidden = true;
+    }
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeProfileEditor();
+    });
+</script>
+{% endblock %}

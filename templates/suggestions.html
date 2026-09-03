@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Suggestions{% endblock %}
+
+{% block content %}
+    <a  href="/notes?course={{ course }}">
+    <h1>| Course: {{course}}</h1></a>
+    <br>
+    <h2>Lecture Title: {{notes.title}}</h2>
+    <br>
+    <fieldset style="padding: 15px; background-color: #181818;">
+        <p>{{ notes.note }}</p>
+    </fieldset>
+   
+<br>
+    <section class="suggestions-table">
+        <h2>Suggestions</h2>
+        {% if suggestions %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Suggested Note</th>
+                    <th style="text-align: center;">Suggested By</th>
+                    <th style="text-align: center;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for suggestion in suggestions %}
+                <tr>
+                    <td class="suggestion-text">
+                        {{ suggestion.highlighted_html|safe }}
+                    </td>
+                    <td style="text-align: center;">{{ suggestion.suggested_by }}</td>
+                    <td>
+                        <div class="action-buttons">
+                        <form action="{{ url_for('approve_suggestion') }}" method="post">
+                            <input type="hidden" name="suggestionID" value="{{ suggestion.suggestionID }}">
+                            <input type="hidden" name="suggestion" value="{{ suggestion.suggestion }}">
+                            <input type="hidden" name="noteID" value="{{ noteID }}">
+                            <input type="hidden" name="courseID" value="{{ course }}">
+                            <input type="hidden" name="buttton" value="approve">
+                            <button type="submit" class="approve-btn">Approve</button>
+                        </form>
+                        <form action="{{ url_for('approve_suggestion') }}" method="post">
+                            <input type="hidden" name="suggestionID" value="{{ suggestion.suggestionID }}">
+                            <input type="hidden" name="noteID" value="{{ noteID }}">
+                            <input type="hidden" name="courseID" value="{{ course }}">
+                            <input type="hidden" name="buttton" value="reject">
+                            <button type="submit" class="reject-btn">Reject</button>
+                        </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No suggestions have been made for this lecture yet.</p>
+        {% endif %}
+    </section>
+<br>
+        <a href="/notes?course={{ course }}" >← Back</a>
+{% endblock %}

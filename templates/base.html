@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Welcome{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='cl.png') }}" type="image/png">
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+      <a href="/" class="logo">CampusLink</a>
+      <ul class="nav-links">
+        <li><a href="/home">Home</a></li>
+        {% if current_user.is_authenticated %}
+          <li><a href="/notes">Courses</a></li>
+          <li class="nav-dropdown">
+            <a href="{{ url_for('profile') }}">Logged in as <label id="username">{{ current_user.userID }}</label></a>
+            <div class="nav-dropdown-content">
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+          </li>
+          
+        {% else %}
+          <li><a href="{{ url_for('login') }}">Login</a></li>
+        {% endif %}
+      </ul>
+    </nav>
+    <div id="flash-messages">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="flash-message">
+                        {{ message }}
+                        <button class="close-btn" onclick="this.parentElement.style.display='none';">&times;</button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Page-specific content -->
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const flashMessages = document.querySelectorAll('.flash-message');
+        flashMessages.forEach(message => {
+            setTimeout(() => {
+                // Animate both opacity and transform to create a slide-out fade effect
+                message.style.opacity = '0';
+                message.style.transform = 'translateX(100%)';
+
+                // After the transition, remove the element
+                setTimeout(() => message.remove(), 500);
+            }, 3000); // 3 seconds
+        });
+    });
+</script>
+</body>
+</html>

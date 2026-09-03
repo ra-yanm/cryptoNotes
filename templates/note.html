@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Notes{% endblock %}
+
+{% block content %}
+
+{% if notes %}
+    <a href="/notes?course={{ course }}">
+    <h1>| Course: {{course}}</h1></a>
+    <br>
+    <h2>Lecture Title: {{notes.title}}</h2>
+    <br>
+    <fieldset style="padding: 15px; background-color: #181818; min-width: 700px;">
+        <p>{{ notes.note }}</p>
+    </fieldset>
+    
+    <div id="suggestion-section">
+    <div style="display: flex; gap: 10px;">
+        {% if current_user.user_type!='alumni' %}
+            <button onclick="showSuggestionForm()">
+            {% if current_user.user_type=='student' %}
+                Suggest an Edit
+            {% else %}
+                Suggest/Edit Note
+            {% endif %}
+            </button>
+        {% endif %}
+        {% if current_user.user_type == 'faculty' %}
+        <form action="/hide_note" method="post" >
+            <input type="hidden" name="course" value="{{ course }}">
+            <input type="hidden" name="noteID" value="{{ noteID }}">
+            {% if notes.student_view== 1 %}
+                <input type="hidden" name="hide" value="0">
+                <button type="submit">Hide This Note</button>
+            {% else %}
+                <input type="hidden" name="hide" value="1">
+                <button type="submit">Unhide This Note</button>
+            {% endif %}
+        </form>
+        {% endif %}
+        {% if (current_user.user_type == 'faculty' or current_user.user_type == 'st') and have_suggestion %}
+            <a href="/approve_suggestion?L={{ noteID }}">
+            <button>Approve Suggestions</button>
+            </a>
+        {% endif %}
+        {% if current_user.user_type == 'faculty' %}
+        <form action="/deleting" method="get" >
+            <input type="hidden" name="L" value="{{ noteID }}">
+            <button type="submit" style="color:#fe9797; background-color:#232323">DELETE Note</button>
+
+        </form>
+        {% endif %}
+        
+    </div>
+    <form id="suggestion-form" action="/submit_suggestion" method="post" style="display:none;">
+        <h3>Your Suggestion:</h3>
+        <textarea name="suggestion_note" rows="13" cols="100" required>{{ notes.note }}</textarea>
+        <input type="hidden" name="course" value="{{ course }}">
+        <input type="hidden" name="noteID" value="{{ noteID }}">
+        <br>
+        <button type="submit" name="buttton" value="suggesting">Submit as Suggestion</button>
+
+        {% if current_user.user_type=='faculty' or current_user.user_type=='st' %}
+            <button type="submit" name="buttton" value="saving">Save</button>
+        {% endif %}        
+    </form>
+</div>
+
+{% else %}
+    <p>No notes found.</p>
+    <br>
+    <p></p>
+{% endif %}
+<br>
+        <a href="/notes?course={{ course }}" >← Back</a>
+
+<script>
+    function showSuggestionForm() {
+        var form = document.getElementById("suggestion-form");
+        if (form.style.display === "none") {
+            form.style.display = "block";
+        } else {
+            form.style.display = "none";
+        }
+    }
+</script>
+
+{% endblock %}
