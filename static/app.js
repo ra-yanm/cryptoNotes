@@ -14,6 +14,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const userSearch = document.querySelector('[data-user-search]');
+    if (userSearch) {
+        userSearch.addEventListener('input', () => {
+            const search = userSearch.value.trim().toLowerCase();
+            document.querySelectorAll('[data-user-row]').forEach(row => {
+                row.hidden = search && !row.textContent.toLowerCase().includes(search);
+            });
+        });
+    }
+
     const profileEditor = document.getElementById('profile-editor');
     if (profileEditor) {
         document.querySelectorAll('[data-profile-action="open"]').forEach(button => {

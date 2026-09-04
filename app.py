@@ -24,6 +24,9 @@ app.config.update(
 )
 mail = Mail(app)
 _secure_storage_ready = False
+ADMIN_USER_ID = "admin"
+ADMIN_PASSWORD = "admin12345"
+ADMIN_EMAIL = "admin@cryptonotes.local"
 
 
 def get_db():
@@ -61,6 +64,15 @@ def ensure_secure_storage(db):
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            admin_ID VARCHAR(20) PRIMARY KEY,
+            email VARCHAR(254) NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_ecc_keys (
             user_ID VARCHAR(20) PRIMARY KEY,
             public_key TEXT NOT NULL,
@@ -81,6 +93,7 @@ def ensure_secure_storage(db):
         )
     """)
     cursor.execute("ALTER TABLE user ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE")
+    cursor.execute("ALTER TABLE user ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
     for table, columns in {
         "user": "MODIFY email VARCHAR(254), MODIFY password TEXT, MODIFY bio TEXT, MODIFY discord_id TEXT",
         "notes": "MODIFY title TEXT, MODIFY note TEXT",
@@ -89,6 +102,14 @@ def ensure_secure_storage(db):
         "courses": "MODIFY title TEXT, MODIFY description TEXT",
     }.items():
         cursor.execute(f"ALTER TABLE {table} {columns}")
+    admin_hash = hash_password(ADMIN_PASSWORD)
+    cursor.execute(
+        "INSERT INTO admins (admin_ID, email, password, name) VALUES (%s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE email = VALUES(email), password = VALUES(password), name = VALUES(name)",
+        (ADMIN_USER_ID, ADMIN_EMAIL, admin_hash, "Administrator"),
+    )
+    cursor.execute("DELETE FROM user WHERE user_ID = %s", (ADMIN_USER_ID,))
+    cursor.execute("DELETE FROM secure_login WHERE identity_hash = %s", (identity_digest(ADMIN_USER_ID),))
     db.commit()
     cursor.close()
     _secure_storage_ready = True
@@ -131,8 +152,17 @@ def user_ecc_key(user_id):
             (user_id, json.dumps(list(key.public_key)), encrypt_bulk(str(key.private_key))),
         )
         return key
-    private_key = int(decrypt_bulk(record["encrypted_private_key"]))
-    return ECC(private_key=private_key)
+    try:
+        private_key = int(decrypt_bulk(record["encrypted_private_key"]))
+        return ECC(private_key=private_key)
+    except (ValueError, TypeError):
+        # Imported databases may contain keys encrypted with another local key set.
+        key = ECC()
+        query(
+            "UPDATE user_ecc_keys SET public_key = %s, encrypted_private_key = %s WHERE user_ID = %s",
+            (json.dumps(list(key.public_key)), encrypt_bulk(str(key.private_key)), user_id),
+        )
+        return key
 
 
 def message_context(note_id, user, student_id=None):
@@ -145,12 +175,12 @@ def message_context(note_id, user, student_id=None):
     )
     if not context:
         return None, (jsonify(error="Note not found"), 404)
-    if user["user_type"] == "faculty":
+    if user["user_type"] in ("faculty", "admin"):
         if context["coordinator"] != user["user_ID"]:
             return None, (jsonify(error="Only the course coordinator may access these messages"), 403)
         if not student_id:
             return context, None
-    elif user["user_type"] == "student":
+    elif user["user_type"] in ("student", "st"):
         if not context["student_view"]:
             return None, (jsonify(error="This note is not available to students"), 403)
         student_id = user["user_ID"]
@@ -176,7 +206,12 @@ def check_password(password, password_hash):
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
+def purge_expired_otps():
+    query("DELETE FROM account_otp WHERE expires_at <= %s", (datetime.utcnow(),))
+
+
 def create_otp(email, purpose, user_id=None, payload=None):
+    purge_expired_otps()
     challenge_id = secrets.token_hex(32)
     otp = f"{secrets.randbelow(1000000):06d}"
     query(
@@ -196,6 +231,7 @@ def create_otp(email, purpose, user_id=None, payload=None):
 
 
 def resend_otp(challenge_id, purpose):
+    purge_expired_otps()
     record = query(
         "SELECT email, user_ID, payload FROM account_otp "
         "WHERE challenge_id = %s AND purpose = %s AND used_at IS NULL",
@@ -206,23 +242,21 @@ def resend_otp(challenge_id, purpose):
     new_challenge_id = create_otp(
         record["email"], purpose, record["user_ID"], record["payload"]
     )
-    query(
-        "UPDATE account_otp SET used_at = %s WHERE challenge_id = %s",
-        (datetime.utcnow(), challenge_id),
-    )
+    query("DELETE FROM account_otp WHERE challenge_id = %s", (challenge_id,))
     return new_challenge_id
 
 
 def valid_otp(challenge_id, otp, purpose):
+    purge_expired_otps()
     record = query(
         "SELECT * FROM account_otp WHERE challenge_id = %s AND purpose = %s AND used_at IS NULL",
         (challenge_id, purpose),
     )
-    if not record or record["expires_at"] < datetime.utcnow():
+    if not record:
         return None
     if not secrets.compare_digest(record["otp_hash"], hashlib.sha256(otp.encode()).hexdigest()):
         return None
-    query("UPDATE account_otp SET used_at = %s WHERE challenge_id = %s", (datetime.utcnow(), challenge_id))
+    query("DELETE FROM account_otp WHERE challenge_id = %s", (challenge_id,))
     return record
 
 
@@ -244,10 +278,17 @@ def authenticated_user(view):
         if not user_id:
             return jsonify(error="Authentication required"), 401
         user = query(
-            "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
-            "FROM user WHERE user_ID = %s",
+            "SELECT admin_ID AS user_ID, 'admin' AS user_type, name, email, "
+            "NULL AS department, NULL AS bio, NULL AS personal_phn, NULL AS discord_id "
+            "FROM admins WHERE admin_ID = %s",
             (user_id,),
         )
+        if not user:
+            user = query(
+                "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
+                "FROM user WHERE user_ID = %s",
+                (user_id,),
+            )
         if not user:
             return jsonify(error="User not found"), 401
         return view(user, *args, **kwargs)
@@ -255,11 +296,35 @@ def authenticated_user(view):
     return wrapped
 
 
+def admin_only(view):
+    @wraps(view)
+    @authenticated_user
+    def wrapped(user, *args, **kwargs):
+        if user["user_type"] != "admin":
+            return jsonify(error="Administrator access required"), 403
+        return view(user, *args, **kwargs)
+
+    return wrapped
+
+
+def faculty_access(user):
+    return user["user_type"] in ("faculty", "admin")
+
+
 @app.post("/api/login")
 def login():
     data = request.get_json(silent=True) or {}
     identity = data.get("userID", "")
     password = data.get("password", "")
+    admin_record = query(
+        "SELECT admin_ID AS user_ID, 'admin' AS user_type, name, email, password, "
+        "NULL AS department, NULL AS bio, NULL AS personal_phn, NULL AS discord_id "
+        "FROM admins WHERE admin_ID = %s OR email = %s",
+        (identity, identity),
+    )
+    if admin_record and check_password(password, admin_record.pop("password")):
+        admin = admin_record
+        return jsonify(user=admin, message="Administrator login successful")
     encrypted = query("SELECT encrypted_credentials FROM secure_login WHERE identity_hash = %s", (identity_digest(identity),))
     user = None
     if encrypted:
@@ -386,10 +451,48 @@ def update_profile(user):
     return jsonify(message="Profile updated successfully!", user=updated)
 
 
+@app.get("/api/admin/users")
+@admin_only
+def admin_users(user):
+    users = query(
+        "SELECT user_ID, name, email, department, user_type, created_at FROM user ORDER BY created_at DESC, user_ID",
+        many=True,
+    )
+    return jsonify(users=users, roles=["student", "faculty", "alumni", "st"])
+
+
+@app.put("/api/admin/users/<user_id>/role")
+@admin_only
+def admin_update_role(admin, user_id):
+    data = request.get_json(silent=True) or {}
+    role = str(data.get("user_type", "")).strip().lower()
+    if role not in ("student", "faculty", "alumni", "st"):
+        return jsonify(error="Invalid user type"), 400
+    if user_id == ADMIN_USER_ID:
+        return jsonify(error="The administrator role cannot be changed"), 400
+    if not query("SELECT user_ID FROM user WHERE user_ID = %s", (user_id,)):
+        return jsonify(error="User not found"), 404
+    query("UPDATE user SET user_type = %s WHERE user_ID = %s", (role, user_id))
+    return jsonify(message="User type updated successfully")
+
+
+@app.put("/api/admin/courses/<course_id>/coordinator")
+@admin_only
+def admin_assign_coordinator(admin, course_id):
+    data = request.get_json(silent=True) or {}
+    coordinator = str(data.get("user_ID", "")).strip()
+    if not query("SELECT courseID FROM courses WHERE courseID = %s", (course_id,)):
+        return jsonify(error="Course not found"), 404
+    if not query("SELECT user_ID FROM user WHERE user_ID = %s AND user_type = 'faculty'", (coordinator,)):
+        return jsonify(error="A faculty user must be selected as coordinator"), 400
+    query("UPDATE courses SET coordinator = %s WHERE courseID = %s", (coordinator, course_id))
+    return jsonify(message="Course coordinator updated successfully")
+
+
 @app.get("/api/courses")
 @authenticated_user
 def courses(user):
-    return jsonify(courses=query("SELECT courseID FROM courses ORDER BY courseID", many=True))
+    return jsonify(courses=query("SELECT courseID, coordinator FROM courses ORDER BY courseID", many=True))
 
 
 @app.get("/api/courses/<course_id>")
@@ -432,7 +535,7 @@ def note_messages(user, note_id):
     context, error = message_context(note_id, user, request.args.get("student_id"))
     if error:
         return error
-    if user["user_type"] == "faculty" and "student_ID" not in context:
+    if faculty_access(user) and "student_ID" not in context:
         participants = query(
             "SELECT DISTINCT m.student_ID AS user_ID, u.name "
             "FROM note_messages m JOIN user u ON u.user_ID = m.student_ID "
@@ -524,7 +627,7 @@ def submit_suggestion(user, note_id):
     original["note"] = decrypt_bulk(original["note"])
     if not suggestion or suggestion == original["note"]:
         return jsonify(message="No changes, [Not submitted]"), 200
-    if action == "saving" and user["user_type"] in ("faculty", "st"):
+    if action == "saving" and faculty_access(user):
         query("UPDATE notes SET note = %s WHERE noteID = %s", (encrypt_bulk(suggestion), note_id))
         return jsonify(message="Saved!")
     if action == "suggesting" and user["user_type"] != "alumni":
@@ -540,7 +643,7 @@ def submit_suggestion(user, note_id):
 @app.post("/api/notes/<int:note_id>/visibility")
 @authenticated_user
 def update_visibility(user, note_id):
-    if user["user_type"] != "faculty":
+    if not faculty_access(user):
         return jsonify(error="Permission denied"), 403
     visible = int((request.get_json(silent=True) or {}).get("student_view", 0))
     query("UPDATE notes SET student_view = %s WHERE noteID = %s", (visible, note_id))
@@ -553,7 +656,7 @@ def add_note(user):
     data = request.get_json(silent=True) or {}
     if user["user_type"] == "alumni":
         return jsonify(error="Permission denied"), 403
-    if user["user_type"] == "faculty":
+    if faculty_access(user):
         query(
             "INSERT INTO notes (courseID, title, note, student_view) VALUES (%s, %s, %s, %s)",
             (data.get("courseID"), encrypt_bulk(data.get("title")), encrypt_bulk(data.get("note")), int(data.get("student_view", 0))),
@@ -569,7 +672,7 @@ def add_note(user):
 @app.post("/api/courses")
 @authenticated_user
 def add_course(user):
-    if user["user_type"] != "faculty":
+    if not faculty_access(user):
         return jsonify(error="Permission denied"), 403
     data = request.get_json(silent=True) or {}
     query(

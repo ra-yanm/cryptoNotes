@@ -16,6 +16,9 @@
         <li><a href="/home">Home</a></li>
         {% if current_user.is_authenticated %}
           <li><a href="/notes">Courses</a></li>
+          {% if current_user.is_admin %}
+            <li><a href="{{ url_for('admin') }}">Admin</a></li>
+          {% endif %}
           <li class="nav-dropdown">
             <a href="{{ url_for('profile') }}">Logged in as <label id="username">{{ current_user.userID }}</label></a>
             <div class="nav-dropdown-content">

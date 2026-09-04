@@ -30,6 +30,10 @@ main {
     padding: 5rem 2rem 2rem;  
 }
 
+main:has(.admin-page) {
+    max-width: 1180px;
+}
+
 .auth-page {
     width: min(100%, 420px);
     margin: 0 auto;
@@ -317,6 +321,109 @@ p:hover {
 #username {
     color:#b2ffdb
      
+}
+
+.admin-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0 0.75rem;
+}
+
+.admin-toolbar input {
+    flex: 1;
+    max-width: 360px;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #566b68;
+    border-radius: 6px;
+    background: #1f2928;
+    color: #e0e0e0;
+}
+
+.admin-table-wrap {
+    overflow-x: auto;
+    margin-bottom: 2rem;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1f1f1fc4;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 0.7rem;
+    border-bottom: 1px solid #394846;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.admin-table th {
+    color: #b0f0dd;
+    font-size: 0.85rem;
+}
+
+.admin-table small,
+.admin-fixed-role {
+    color: #aabbb8;
+}
+
+.admin-role-form {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.admin-role-form select,
+.admin-role-form button {
+    padding: 0.45rem 0.55rem;
+    border-radius: 5px;
+    border: 1px solid #566b68;
+}
+
+.admin-table td:nth-child(1) {
+    min-width: 130px;
+}
+
+.admin-table td:nth-child(2) {
+    min-width: 170px;
+}
+
+.admin-table td:nth-child(6) {
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    main:has(.admin-page) {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    .admin-table {
+        font-size: 0.85rem;
+    }
+
+    .admin-table th,
+    .admin-table td {
+        padding: 0.5rem;
+    }
+
+    .admin-table td:nth-child(2),
+    .admin-table td:nth-child(3),
+    .admin-table td:nth-child(5) {
+        display: none;
+    }
+
+    .admin-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-toolbar input {
+        max-width: none;
+    }
 }
 
 .message-panel {

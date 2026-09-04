@@ -56,6 +56,14 @@ class User:
         self.user_type = data["user_type"]
 
     @property
+    def is_admin(self):
+        return self.user_type == "admin"
+
+    @property
+    def is_faculty(self):
+        return self.user_type in ("faculty", "admin")
+
+    @property
     def is_authenticated(self):
         return bool(session.get("user"))
 
@@ -87,7 +95,11 @@ def api_request(method, path, **kwargs):
         flash("The data server is unavailable.")
         return None
     if response.status_code >= 400:
-        flash(response.json().get("error", "Request failed."))
+        try:
+            error = response.json().get("error", "Request failed.")
+        except ValueError:
+            error = f"API request failed ({response.status_code}). Check the API terminal for the server error."
+        flash(error)
         return None
     return response.json()
 
@@ -116,6 +128,17 @@ def login():
     result = api_request("POST", "/login", json={"userID": request.form["userID"], "password": request.form["password"]})
     if not result:
         return redirect(url_for("login"))
+    if result.get("user"):
+        session.clear()
+        session.permanent = True
+        session["last_activity"] = time.time()
+        session["user"] = result["user"]
+        flash(result.get("message", "Logged in successfully!"))
+
+        if result["user"].get("user_type") == "admin":
+            return redirect(url_for("admin"))
+
+        return redirect(url_for("home"))
     session["login_challenge"] = result["challenge_id"]
     return redirect(url_for("verify_login"))
 
@@ -194,6 +217,34 @@ def verify_login():
             flash("Logged in successfully!")
             return redirect(url_for("home"))
     return render_template("verify_otp.html", form=form, title="Verify login")
+
+
+@app.get("/admin")
+@login_required
+def admin():
+    result = api_request("GET", "/admin/users")
+    if not result:
+        return redirect(url_for("home"))
+    courses = api_request("GET", "/courses")
+    return render_template("admin.html", users=result["users"], roles=result["roles"], courses=courses["courses"] if courses else [])
+
+
+@app.post("/admin/user-role")
+@login_required
+def admin_user_role():
+    result = api_request("PUT", f"/admin/users/{request.form['user_ID']}/role", json={"user_type": request.form["user_type"]})
+    if result:
+        flash(result["message"])
+    return redirect(url_for("admin"))
+
+
+@app.post("/admin/course-coordinator")
+@login_required
+def admin_course_coordinator():
+    result = api_request("PUT", f"/admin/courses/{request.form['courseID']}/coordinator", json={"user_ID": request.form["user_ID"]})
+    if result:
+        flash(result["message"])
+    return redirect(url_for("admin"))
 
 
 @app.get("/logout")

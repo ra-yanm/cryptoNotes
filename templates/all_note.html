@@ -9,7 +9,7 @@
 <br>
 <p>{{course_info.description}}</p>
 <br>
-{% if current_user.user_type=='faculty' %}
+{% if current_user.is_faculty %}
 <hr style=" border: none; border-top: 1px solid #5e5e5e;">
 <br>
     <div style="gap: 10px; display: flex; flex-direction: row-reverse;">
@@ -64,7 +64,7 @@
 
 <ol id="p2">
     {% for note in notes %}
-    {% if current_user.user_type == 'faculty' %}
+    {% if current_user.is_faculty %}
     <a id="nlist" href="?course={{note.courseID}}&L={{note.noteID}}">
         <li>
             {{loop.index}}. {{note.courseID}} | {{note.title}}
@@ -129,7 +129,7 @@
     {% endfor %}
 </div>
 <div style="text-align: right;">
-    {% if current_user.user_type == 'faculty' %}
+    {% if current_user.is_faculty %}
     <br>
     <br>
     <hr>
