@@ -22,7 +22,7 @@ This project uses three separate Python modules. The implementation is education
 
 Encrypted blocks and their lengths are stored as JSON so they can be placed in a database `TEXT` column. The JSON payload also contains a version and an HMAC-SHA256 tag. The tag covers the complete RSA payload, excluding the tag itself, using a key derived from the RSA private key. Decryption verifies this tag with `hmac.compare_digest()` before processing any RSA blocks.
 
-RSA is used for login credentials because login data is small. The API stores an encrypted JSON object containing the login identity and password.
+RSA is used for user profile fields because these values are short enough for the educational RSA implementation. The API stores encrypted JSON objects in the user profile columns.
 
 ### `ecc.py`
 
@@ -72,13 +72,13 @@ The API integration is in `app.py`.
 
 ### Login records
 
-Regular users store an RSA-encrypted bcrypt password hash directly in `user.password`. The original password is never stored. On startup, legacy plaintext or bcrypt values and any existing `secure_login` records are migrated into `user.password`, then the obsolete `secure_login` table is dropped.
+Regular users store a bcrypt password hash directly in `user.password`. The original password is never stored. Password verification uses bcrypt only. The separate `admins` table also uses bcrypt directly and bypasses OTP.
 
-During login, the API finds the user by ID or email, decrypts the RSA value, and verifies the submitted password with bcrypt. The separate `admins` table uses bcrypt directly and bypasses OTP.
+During login, the API finds the user by ID or email and verifies the submitted password with bcrypt.
 
 ### Bulk records
 
-The API encrypts values before `INSERT` and `UPDATE`. Profile fields such as `bio`, `discord_id`, and `personal_phn`, along with notes, titles, suggestions, and course descriptions, use the application ECC key. It decrypts them after `SELECT`, immediately before returning JSON to the web application. Existing plaintext values are migrated on startup.
+The API encrypts values before `INSERT` and `UPDATE`. User profile fields (`name`, `department`, `bio`, `discord_id`, and `personal_phn`) use the application RSA key. Notes, titles, suggestions, pending-note content, and course descriptions use the application ECC key. It decrypts them after `SELECT`, immediately before returning JSON to the web application. Existing plaintext or legacy user/content fields are migrated to RSA or ECC on startup. Identifiers, foreign keys, roles, timestamps, hashes, and visibility flags remain plaintext where the database or application must search, join, authorize, or sort by them.
 
 The SQL dump changes the encrypted content columns to `TEXT` because encrypted JSON is larger than the original note and title values.
 
@@ -89,7 +89,7 @@ Browser
   -> web_app.py
   -> app.py API
   -> key_management.py
-       -> rsa.py for login data
+      -> rsa.py for user profile data
        -> ecc.py for bulk data
   -> MariaDB
 ```
@@ -100,7 +100,7 @@ For reads, the flow reverses: the API retrieves ciphertext, decrypts it through 
 
 The system uses HMAC-SHA256 for integrity and authentication. HMAC is safer and simpler than CBC-MAC for the variable-length JSON and text values stored by this application. It does not require block padding and uses Python's `hmac` and `hashlib` implementations.
 
-ECC bulk values calculate a tag over `nonce + ciphertext` with the key derived from the shared elliptic-curve point. RSA login records calculate a tag over the version, encrypted blocks, and block lengths with a key derived from the RSA private key. Encrypted key files calculate a tag over `salt + nonce + ciphertext` using the passphrase-derived key.
+ECC bulk values calculate a tag over `nonce + ciphertext` with the key derived from the shared elliptic-curve point. RSA user-field records calculate a tag over the version, encrypted blocks, and block lengths with a key derived from the RSA private key. Encrypted key files calculate a tag over `salt + nonce + ciphertext` using the passphrase-derived key.
 
 MAC verification occurs on every decryption. The tag is checked with `hmac.compare_digest()` before plaintext is returned or encrypted blocks are processed. Any invalid, missing, or malformed authentication data raises an error and is rejected. The plaintext fallback applies only to database values that are clearly not in the encrypted ECC JSON format, so an authenticated ciphertext failure is never treated as plaintext.
 
@@ -108,7 +108,7 @@ MAC verification occurs on every decryption. The tag is checked with `hmac.compa
 
 The integrity requirement was implemented in the following way:
 
-1. Added HMAC-SHA256 authentication to RSA login ciphertext. RSA payloads now include `version`, `blocks`, `lengths`, and `tag` fields.
+1. Added HMAC-SHA256 authentication to RSA user-field ciphertext. RSA payloads include `version`, `blocks`, `lengths`, and `tag` fields.
 2. RSA decryption verifies the tag before decrypting blocks. Missing tags, unsupported versions, and modified payloads are rejected.
 3. Retained the existing HMAC-SHA256 protection for ECC bulk data and encrypted key files.
 4. Changed bulk-data handling so an ECC authentication failure is raised instead of being silently returned as plaintext.

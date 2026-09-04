@@ -284,10 +284,18 @@ def notes():
     note_id = request.args.get("L")
     if note_id:
         result = api_request("GET", f"/notes/{note_id}")
+        current_user = session["user"]
+        can_request_messages = bool(
+            result
+            and (
+                current_user["user_type"] in ("student", "st")
+                or result["note"].get("coordinator") == current_user["user_ID"]
+            )
+        )
         message_result = api_request(
             "GET", f"/notes/{note_id}/messages",
             params={"student_id": request.args.get("student")} if request.args.get("student") else {},
-        ) if result else None
+        ) if can_request_messages else None
         return render_template(
             "note.html",
             notes=result["note"] if result else None,
@@ -325,6 +333,30 @@ def submit_suggestion():
     if result:
         flash(result.get("message", "Request complete."))
     return redirect(url_for("notes", course=request.form["course"], L=request.form["noteID"]))
+
+
+@app.route("/approve_suggestion", methods=["GET", "POST"])
+@login_required
+def approve_suggestion():
+    note_id = request.args.get("L") or request.form.get("noteID")
+    if request.method == "POST":
+        result = api_request(
+            "POST", f"/notes/{note_id}/suggestions/review",
+            json={"suggestionID": request.form["suggestionID"], "action": request.form["buttton"]},
+        )
+        if result:
+            flash(result["message"])
+        return redirect(url_for("approve_suggestion", L=note_id))
+    result = api_request("GET", f"/notes/{note_id}/suggestions")
+    if not result:
+        return redirect(url_for("notes"))
+    return render_template(
+        "suggestions.html",
+        notes=result["note"],
+        suggestions=result["suggestions"],
+        course=result["note"]["courseID"],
+        noteID=note_id,
+    )
 
 
 @app.post("/send_message")

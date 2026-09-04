@@ -84,12 +84,18 @@ RSA_KEY = _load_or_create(RSA_FILE, RSA)
 ECC_KEY = _load_or_create(ECC_FILE, ECC)
 
 
-def encrypt_login(value):
-    return RSA_KEY.encrypt(value)
+def encrypt_user_field(value):
+    return RSA_KEY.encrypt(value) if value is not None else None
 
 
-def decrypt_login(value):
-    return RSA_KEY.decrypt(value)
+def decrypt_user_field(value):
+    if value is None or not isinstance(value, str):
+        return value
+    if value.startswith('{"version":2'):
+        return RSA_KEY.decrypt(value)
+    if value.startswith('{"ephemeral":'):
+        return ECC_KEY.decrypt(value)
+    return value
 
 
 def encrypt_bulk(value):

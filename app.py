@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 import bcrypt
 from flask_mailman import EmailMessage, Mail
-from key_management import decrypt_bulk, decrypt_login, encrypt_bulk, encrypt_login
+from key_management import decrypt_bulk, decrypt_user_field, encrypt_bulk, encrypt_user_field
 from ecc import ECC, decrypt_with, encrypt_for
 
 
@@ -44,7 +44,7 @@ def ensure_secure_storage(db):
     global _secure_storage_ready
     if _secure_storage_ready:
         return
-    cursor = db.cursor()
+    cursor = db.cursor(dictionary=True, buffered=True)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS account_otp (
             challenge_id CHAR(64) PRIMARY KEY,
@@ -86,6 +86,7 @@ def ensure_secure_storage(db):
             INDEX note_message_lookup (noteID, student_ID, created_at)
         )
     """)
+    cursor.execute("ALTER TABLE user MODIFY name TEXT NOT NULL, MODIFY department TEXT NOT NULL")
     admin_hash = hash_password(ADMIN_PASSWORD)
     cursor.execute(
         "INSERT INTO admins (admin_ID, email, password, name) VALUES (%s, %s, %s, %s) "
@@ -93,7 +94,45 @@ def ensure_secure_storage(db):
         (ADMIN_USER_ID, ADMIN_EMAIL, admin_hash, "Administrator"),
     )
     cursor.execute("DELETE FROM user WHERE user_ID = %s", (ADMIN_USER_ID,))
-    cursor.execute("DELETE FROM secure_login WHERE identity_hash = %s", (identity_digest(ADMIN_USER_ID),))
+    cursor.execute("SELECT user_ID, name, department, bio, personal_phn, discord_id FROM user")
+    fields = ("name", "department", "bio", "personal_phn", "discord_id")
+    for row in cursor.fetchall():
+        encrypted_values = []
+        for field in fields:
+            raw_value = row[field]
+            if isinstance(raw_value, str) and raw_value.startswith('{"version":2'):
+                encrypted_values.append(raw_value)
+            else:
+                encrypted_values.append(encrypt_user_field(decrypt_user_field(raw_value)))
+        if any(row[field] != value for field, value in zip(fields, encrypted_values)):
+            cursor.execute(
+                "UPDATE user SET name = %s, department = %s, bio = %s, personal_phn = %s, discord_id = %s WHERE user_ID = %s",
+                (*encrypted_values, row["user_ID"]),
+            )
+    content_fields = (
+        ("courses", "courseID", ("title", "description")),
+        ("notes", "noteID", ("title", "note")),
+        ("note_pending", "ID", ("title", "note")),
+        ("note_suggestions", "suggestionID", ("suggestion",)),
+    )
+    for table, key_field, fields in content_fields:
+        cursor.execute(f"SELECT {key_field}, {', '.join(fields)} FROM {table}")
+        for row in cursor.fetchall():
+            encrypted_values = []
+            changed = False
+            for field in fields:
+                raw_value = row[field]
+                if raw_value is None or (isinstance(raw_value, str) and raw_value.startswith('{"ephemeral":')):
+                    encrypted_values.append(raw_value)
+                else:
+                    encrypted_values.append(encrypt_bulk(raw_value))
+                    changed = True
+            if changed:
+                assignments = ", ".join(f"{field} = %s" for field in fields)
+                cursor.execute(
+                    f"UPDATE {table} SET {assignments} WHERE {key_field} = %s",
+                    (*encrypted_values, row[key_field]),
+                )
     db.commit()
     cursor.close()
     _secure_storage_ready = True
@@ -102,10 +141,12 @@ def ensure_secure_storage(db):
 def query(sql, params=(), many=False):
     db = get_db()
     ensure_secure_storage(db)
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor(dictionary=True, buffered=True)
     try:
         cursor.execute(sql, params)
-        result = cursor.fetchall() if many else cursor.fetchone()
+        statement = sql.lstrip().upper()
+        is_read = statement.startswith(("SELECT", "SHOW", "DESCRIBE", "EXPLAIN"))
+        result = (cursor.fetchall() if many else cursor.fetchone()) if is_read else None
         db.commit()
         return result
     finally:
@@ -118,7 +159,7 @@ def protected_fields(row, fields):
         return row
     for field in fields:
         if field in row:
-            row[field] = decrypt_bulk(row[field])
+            row[field] = decrypt_user_field(row[field])
     return row
 
 
@@ -159,6 +200,7 @@ def message_context(note_id, user, student_id=None):
     )
     if not context:
         return None, (jsonify(error="Note not found"), 404)
+    context["coordinator_name"] = decrypt_user_field(context["coordinator_name"])
     if user["user_type"] in ("faculty", "admin"):
         if context["coordinator"] != user["user_ID"]:
             return None, (jsonify(error="Only the course coordinator may access these messages"), 403)
@@ -245,10 +287,6 @@ def valid_otp(challenge_id, otp, purpose):
 
 
 def password_hash_from_storage(value):
-    if not value:
-        return None
-    if value.startswith('{"version":2'):
-        return decrypt_login(value)
     return value
 
 
@@ -272,6 +310,7 @@ def authenticated_user(view):
             )
         if not user:
             return jsonify(error="User not found"), 401
+        protected_fields(user, ("name", "department", "bio", "personal_phn", "discord_id"))
         return view(user, *args, **kwargs)
 
     return wrapped
@@ -315,16 +354,7 @@ def login():
         try:
             stored_password = user["password"]
             password_hash = password_hash_from_storage(stored_password)
-            if password_hash and password_hash.startswith("$2"):
-                user_matches = check_password(password, password_hash)
-            else:
-                user_matches = stored_password == password
-                if user_matches:
-                    password_hash = hash_password(password)
-                    query(
-                        "UPDATE user SET password = %s WHERE user_ID = %s",
-                        (encrypt_login(password_hash), user["user_ID"]),
-                    )
+            user_matches = bool(password_hash and password_hash.startswith("$2") and check_password(password, password_hash))
         except (ValueError, TypeError):
             user_matches = False
         if not user_matches:
@@ -349,7 +379,7 @@ def verify_login():
         "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
         "FROM user WHERE user_ID = %s", (record["user_ID"],),
     )
-    protected_fields(user, ("bio", "personal_phn", "discord_id"))
+    protected_fields(user, ("name", "department", "bio", "personal_phn", "discord_id"))
     return jsonify(user=user)
 
 
@@ -397,7 +427,7 @@ def verify_registration():
     query(
         "INSERT INTO user (user_ID, email, password, name, department, user_type, email_verified) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (registration["user_ID"], registration["email"], encrypt_login(registration["password_hash"]), registration["name"], registration["department"], "student", 1),
+        (registration["user_ID"], registration["email"], registration["password_hash"], encrypt_user_field(registration["name"]), encrypt_user_field(registration["department"]), "student", 1),
     )
     return jsonify(message="Registration complete. You can now log in.")
 
@@ -405,7 +435,7 @@ def verify_registration():
 @app.get("/api/me")
 @authenticated_user
 def me(user):
-    protected_fields(user, ("bio", "personal_phn", "discord_id"))
+    protected_fields(user, ("name", "department", "bio", "personal_phn", "discord_id"))
     return jsonify(user=user)
 
 
@@ -418,14 +448,14 @@ def update_profile(user):
         return jsonify(error="Phone number must contain exactly 11 digits"), 400
     query(
         "UPDATE user SET personal_phn = %s, discord_id = %s, bio = %s WHERE user_ID = %s",
-        (encrypt_bulk(phone or None), encrypt_bulk(data.get("discord_id", "").strip() or None), encrypt_bulk(data.get("bio", "").strip() or None), user["user_ID"]),
+        (encrypt_user_field(phone or None), encrypt_user_field(data.get("discord_id", "").strip() or None), encrypt_user_field(data.get("bio", "").strip() or None), user["user_ID"]),
     )
     updated = query(
         "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
         "FROM user WHERE user_ID = %s",
         (user["user_ID"],),
     )
-    protected_fields(updated, ("bio", "personal_phn", "discord_id"))
+    protected_fields(updated, ("name", "department", "bio", "personal_phn", "discord_id"))
     return jsonify(message="Profile updated successfully!", user=updated)
 
 
@@ -436,6 +466,7 @@ def admin_users(user):
         "SELECT user_ID, name, email, department, user_type, created_at FROM user ORDER BY created_at DESC, user_ID",
         many=True,
     )
+    protected_rows(users, ("name", "department"))
     return jsonify(users=users, roles=["student", "faculty", "alumni", "st"])
 
 
@@ -496,7 +527,8 @@ def course_notes(user, course_id):
 @authenticated_user
 def note(user, note_id):
     result = query(
-        "SELECT noteID, courseID, note, title, student_view FROM notes WHERE noteID = %s",
+        "SELECT n.noteID, n.courseID, n.note, n.title, n.student_view, c.coordinator "
+        "FROM notes n JOIN courses c ON c.courseID = n.courseID WHERE n.noteID = %s",
         (note_id,),
     )
     if not result:
@@ -520,10 +552,12 @@ def note_messages(user, note_id):
             "WHERE m.noteID = %s ORDER BY u.name",
             (note_id,), many=True,
         )
+        protected_rows(participants, ("name",))
         return jsonify(
             participants=participants,
             messages=[],
             coordinator_name=context["coordinator_name"],
+            can_message=True,
         )
     rows = query(
         "SELECT m.message_id, m.sender_ID, u.name, m.created_at, "
@@ -539,7 +573,7 @@ def note_messages(user, note_id):
         messages.append({
             "message_id": row["message_id"],
             "sender_ID": row["sender_ID"],
-            "sender_name": row["name"],
+            "sender_name": decrypt_user_field(row["name"]),
             "created_at": row["created_at"].isoformat(),
             "message": decrypt_with(key.private_key, row[ciphertext_field]),
         })
@@ -549,6 +583,7 @@ def note_messages(user, note_id):
         student_ID=context["student_ID"],
         faculty_ID=context["faculty_ID"],
         coordinator_name=context["coordinator_name"],
+        can_message=True,
     )
 
 
@@ -587,6 +622,43 @@ def suggestion_status(user, note_id):
     return jsonify(has_suggestion=bool(query("SELECT noteID FROM note_suggestions WHERE noteID = %s", (note_id,))))
 
 
+@app.get("/api/notes/<int:note_id>/suggestions")
+@authenticated_user
+def note_suggestions(user, note_id):
+    note = query("SELECT noteID, courseID, title, note FROM notes WHERE noteID = %s", (note_id,))
+    if not note:
+        return jsonify(error="Note not found"), 404
+    suggestions = query(
+        "SELECT suggestionID, suggestion, suggested_by FROM note_suggestions "
+        "WHERE noteID = %s ORDER BY suggestionID",
+        (note_id,), many=True,
+    )
+    protected_fields(note, ("title", "note"))
+    protected_rows(suggestions, ("suggestion",))
+    return jsonify(note=note, suggestions=suggestions)
+
+
+@app.post("/api/notes/<int:note_id>/suggestions/review")
+@authenticated_user
+def review_suggestion(user, note_id):
+    if not faculty_access(user):
+        return jsonify(error="Only faculty may review suggestions"), 403
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if action not in ("approve", "reject"):
+        return jsonify(error="Invalid suggestion action"), 400
+    suggestion = query(
+        "SELECT suggestionID, suggestion FROM note_suggestions WHERE suggestionID = %s AND noteID = %s",
+        (data.get("suggestionID"), note_id),
+    )
+    if not suggestion:
+        return jsonify(error="Suggestion not found"), 404
+    if action == "approve":
+        query("UPDATE notes SET note = %s WHERE noteID = %s", (decrypt_bulk(suggestion["suggestion"]), note_id))
+    query("DELETE FROM note_suggestions WHERE suggestionID = %s", (suggestion["suggestionID"],))
+    return jsonify(message="Suggestion approved" if action == "approve" else "Suggestion rejected")
+
+
 @app.get("/api/courses/<course_id>/pending/status")
 @authenticated_user
 def pending_status(user, course_id):
@@ -608,7 +680,7 @@ def submit_suggestion(user, note_id):
     if action == "saving" and faculty_access(user):
         query("UPDATE notes SET note = %s WHERE noteID = %s", (encrypt_bulk(suggestion), note_id))
         return jsonify(message="Saved!")
-    if action == "suggesting" and user["user_type"] != "alumni":
+    if action == "suggesting" and user["user_type"] in ("student", "st", "faculty"):
         query(
             "INSERT INTO note_suggestions (courseID, noteID, suggestion, suggested_by) "
             "VALUES (%s, %s, %s, %s)",

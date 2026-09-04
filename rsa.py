@@ -1,4 +1,4 @@
-"""Small, self-contained RSA implementation for encrypted login records."""
+"""Small, self-contained RSA implementation for encrypted user fields."""
 
 import hashlib
 import hmac
@@ -79,7 +79,7 @@ class RSA:
         return hmac.new(self._mac_key(), message, hashlib.sha256).hexdigest()
 
     def encrypt(self, value):
-        # The website uses RSA for small login-related values.
+        # The website uses RSA for small user profile values.
         # raw is the original text converted into bytes for RSA arithmetic.
         raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
         # RSA can only encrypt numbers smaller than n, so long input is split.
