@@ -46,12 +46,6 @@ def ensure_secure_storage(db):
         return
     cursor = db.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS secure_login (
-            identity_hash CHAR(64) PRIMARY KEY,
-            encrypted_credentials TEXT NOT NULL
-        )
-    """)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS account_otp (
             challenge_id CHAR(64) PRIMARY KEY,
             user_ID VARCHAR(20) NULL,
@@ -92,16 +86,6 @@ def ensure_secure_storage(db):
             INDEX note_message_lookup (noteID, student_ID, created_at)
         )
     """)
-    cursor.execute("ALTER TABLE user ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE")
-    cursor.execute("ALTER TABLE user ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
-    for table, columns in {
-        "user": "MODIFY email VARCHAR(254), MODIFY password TEXT, MODIFY bio TEXT, MODIFY discord_id TEXT",
-        "notes": "MODIFY title TEXT, MODIFY note TEXT",
-        "note_pending": "MODIFY title TEXT, MODIFY note TEXT",
-        "note_suggestions": "MODIFY suggestion TEXT",
-        "courses": "MODIFY title TEXT, MODIFY description TEXT",
-    }.items():
-        cursor.execute(f"ALTER TABLE {table} {columns}")
     admin_hash = hash_password(ADMIN_PASSWORD)
     cursor.execute(
         "INSERT INTO admins (admin_ID, email, password, name) VALUES (%s, %s, %s, %s) "
@@ -260,15 +244,12 @@ def valid_otp(challenge_id, otp, purpose):
     return record
 
 
-def save_login(identity, password):
-    save_login_hash(identity, hash_password(password))
-
-
-def save_login_hash(identity, password_hash):
-    query(
-        "REPLACE INTO secure_login (identity_hash, encrypted_credentials) VALUES (%s, %s)",
-        (identity_digest(identity), encrypt_login(json.dumps({"identity": identity, "password_hash": password_hash}))),
-    )
+def password_hash_from_storage(value):
+    if not value:
+        return None
+    if value.startswith('{"version":2'):
+        return decrypt_login(value)
+    return value
 
 
 def authenticated_user(view):
@@ -325,32 +306,31 @@ def login():
     if admin_record and check_password(password, admin_record.pop("password")):
         admin = admin_record
         return jsonify(user=admin, message="Administrator login successful")
-    encrypted = query("SELECT encrypted_credentials FROM secure_login WHERE identity_hash = %s", (identity_digest(identity),))
-    user = None
-    if encrypted:
-        credentials = json.loads(decrypt_login(encrypted["encrypted_credentials"]))
-        password_matches = (
-            check_password(password, credentials["password_hash"])
-            if "password_hash" in credentials
-            else credentials.get("password") == password
-        )
-        if password_matches:
-            identity = credentials["identity"]
-            user = query("SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id, email_verified FROM user WHERE user_ID = %s OR email = %s", (identity, identity))
-            if user:
-                password_hash = credentials.get("password_hash", hash_password(password))
-                save_login_hash(user["user_ID"], password_hash)
-                save_login_hash(user["email"], password_hash)
-    else:
-        user = query(
-            "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id, email_verified FROM user "
-            "WHERE (user_ID = %s OR email = %s) AND password = %s",
-            (identity, identity, password),
-        )
-        if user:
-            save_login(user["user_ID"], password)
-            save_login(user["email"], password)
-            query("UPDATE user SET password = %s WHERE user_ID = %s", ("", user["user_ID"]))
+    user = query(
+        "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id, email_verified, password "
+        "FROM user WHERE user_ID = %s OR email = %s",
+        (identity, identity),
+    )
+    if user:
+        try:
+            stored_password = user["password"]
+            password_hash = password_hash_from_storage(stored_password)
+            if password_hash and password_hash.startswith("$2"):
+                user_matches = check_password(password, password_hash)
+            else:
+                user_matches = stored_password == password
+                if user_matches:
+                    password_hash = hash_password(password)
+                    query(
+                        "UPDATE user SET password = %s WHERE user_ID = %s",
+                        (encrypt_login(password_hash), user["user_ID"]),
+                    )
+        except (ValueError, TypeError):
+            user_matches = False
+        if not user_matches:
+            user = None
+        else:
+            user.pop("password", None)
     if not user:
         return jsonify(error="Incorrect User ID or Password"), 401
     if not user.get("email_verified", True):
@@ -369,7 +349,7 @@ def verify_login():
         "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
         "FROM user WHERE user_ID = %s", (record["user_ID"],),
     )
-    protected_fields(user, ("bio", "discord_id"))
+    protected_fields(user, ("bio", "personal_phn", "discord_id"))
     return jsonify(user=user)
 
 
@@ -417,17 +397,15 @@ def verify_registration():
     query(
         "INSERT INTO user (user_ID, email, password, name, department, user_type, email_verified) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (registration["user_ID"], registration["email"], registration["password_hash"], registration["name"], registration["department"], "student", 1),
+        (registration["user_ID"], registration["email"], encrypt_login(registration["password_hash"]), registration["name"], registration["department"], "student", 1),
     )
-    save_login_hash(registration["user_ID"], registration["password_hash"])
-    save_login_hash(registration["email"], registration["password_hash"])
     return jsonify(message="Registration complete. You can now log in.")
 
 
 @app.get("/api/me")
 @authenticated_user
 def me(user):
-    protected_fields(user, ("bio", "discord_id"))
+    protected_fields(user, ("bio", "personal_phn", "discord_id"))
     return jsonify(user=user)
 
 
@@ -440,14 +418,14 @@ def update_profile(user):
         return jsonify(error="Phone number must contain exactly 11 digits"), 400
     query(
         "UPDATE user SET personal_phn = %s, discord_id = %s, bio = %s WHERE user_ID = %s",
-        (phone or None, encrypt_bulk(data.get("discord_id", "").strip() or None), encrypt_bulk(data.get("bio", "").strip() or None), user["user_ID"]),
+        (encrypt_bulk(phone or None), encrypt_bulk(data.get("discord_id", "").strip() or None), encrypt_bulk(data.get("bio", "").strip() or None), user["user_ID"]),
     )
     updated = query(
         "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id "
         "FROM user WHERE user_ID = %s",
         (user["user_ID"],),
     )
-    protected_fields(updated, ("bio", "discord_id"))
+    protected_fields(updated, ("bio", "personal_phn", "discord_id"))
     return jsonify(message="Profile updated successfully!", user=updated)
 
 

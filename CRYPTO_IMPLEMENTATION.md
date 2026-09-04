@@ -62,7 +62,7 @@ This module is the only module imported by the application for normal encryption
 3. Generates RSA and ECC keys on first startup.
 4. Encrypts the exported key data into passphrase-protected PEM files.
 5. Loads and authenticates the same keys on later startups.
-6. Exposes `encrypt_login`, `decrypt_login`, `encrypt_bulk`, and `decrypt_bulk`.
+6. Exposes RSA helpers for user password storage and ECC helpers for bulk fields.
 
 The key files are `.keys/rsa_private.pem` and `.keys/ecc_private.pem`. The key directory is excluded from Git. Losing these files or the passphrase means previously encrypted data cannot be decrypted, so production deployments should use a protected secret-management system and backups.
 
@@ -72,22 +72,13 @@ The API integration is in `app.py`.
 
 ### Login records
 
-The `secure_login` table contains:
+Regular users store an RSA-encrypted bcrypt password hash directly in `user.password`. The original password is never stored. On startup, legacy plaintext or bcrypt values and any existing `secure_login` records are migrated into `user.password`, then the obsolete `secure_login` table is dropped.
 
-- `identity_hash`: SHA-256 of the user ID or email, used for lookup without storing the identity as the lookup key
-- `encrypted_credentials`: RSA-encrypted JSON containing the identity and password
-
-Existing database rows contain plaintext passwords because they were part of the original SQL dump. On the first successful legacy login, the API:
-
-1. Verifies the old plaintext password.
-2. Stores RSA-encrypted credentials indexed by both user ID and email.
-3. Clears the old `user.password` value.
-
-Later logins use the encrypted record instead of the old password column.
+During login, the API finds the user by ID or email, decrypts the RSA value, and verifies the submitted password with bcrypt. The separate `admins` table uses bcrypt directly and bypasses OTP.
 
 ### Bulk records
 
-The API encrypts values before `INSERT` and `UPDATE`. It decrypts them after `SELECT`, immediately before returning JSON to the web application. Existing plaintext values remain readable through a compatibility fallback, but newly written values use ECC encryption.
+The API encrypts values before `INSERT` and `UPDATE`. Profile fields such as `bio`, `discord_id`, and `personal_phn`, along with notes, titles, suggestions, and course descriptions, use the application ECC key. It decrypts them after `SELECT`, immediately before returning JSON to the web application. Existing plaintext values are migrated on startup.
 
 The SQL dump changes the encrypted content columns to `TEXT` because encrypted JSON is larger than the original note and title values.
 

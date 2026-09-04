@@ -218,7 +218,7 @@ CREATE TABLE `user` (
   `department` varchar(3) NOT NULL,
   `user_type` varchar(10) NOT NULL,
   `bio` text DEFAULT NULL,
-  `personal_phn` varchar(11) DEFAULT NULL,
+  `personal_phn` text DEFAULT NULL,
   `discord_id` text DEFAULT NULL,
   `email_verified` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
@@ -394,6 +394,8 @@ ALTER TABLE `note_pending`
 ALTER TABLE `note_suggestions`
   ADD CONSTRAINT `fk_lectureID` FOREIGN KEY (`noteID`) REFERENCES `notes` (`noteID`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_suggested_by` FOREIGN KEY (`suggested_by`) REFERENCES `user` (`user_ID`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+DROP TABLE IF EXISTS `secure_login`;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
