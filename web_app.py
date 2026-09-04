@@ -247,6 +247,15 @@ def admin_course_coordinator():
     return redirect(url_for("admin"))
 
 
+@app.post("/admin/rotate-ecc")
+@login_required
+def admin_rotate_ecc():
+    result = api_request("POST", "/admin/rotate-ecc")
+    if result:
+        flash(f"{result['message']} ({result.get('migrated', 0)} values migrated).")
+    return redirect(url_for("admin"))
+
+
 @app.get("/logout")
 def logout():
     session.clear()

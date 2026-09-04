@@ -145,7 +145,7 @@ CREATE TABLE `note_pending` (
   `courseID` varchar(6) NOT NULL,
   `title` text DEFAULT NULL,
   `note` text DEFAULT NULL,
-  `post_by` varchar(11) NOT NULL
+  `post_by` varchar(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -185,19 +185,12 @@ INSERT INTO `note_suggestions` (`courseID`, `noteID`, `suggestionID`, `suggestio
 
 -- --------------------------------------------------------
 
---
--- Table structure for table `secure_login`
---
-
+-- Legacy table retained only so old dump rows can be imported before cleanup.
 DROP TABLE IF EXISTS `secure_login`;
 CREATE TABLE `secure_login` (
   `identity_hash` char(64) NOT NULL,
   `encrypted_credentials` text NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `secure_login`
---
 
 INSERT INTO `secure_login` (`identity_hash`, `encrypted_credentials`) VALUES
 ('80efae7e9c31dad933076634c12eb07eeed74d320191910e925f11ac5d87e1af', '{\"version\":2,\"blocks\":[1420785621928518371880090746470115905464757173287851877083447047666843508981464471617330545553854628265966924032021627179332192407311648086895236347256461,4262677179294481050633606534900571924743792965196571579320282439373609557965732025472946716894740942957213665342852189800576274500979685230994943742216400],\"lengths\":[63,62],\"tag\":\"addd3e97a85c137d2a5393f46c7a6d45dd77cc292ee9b07917b427b47515b12e\"}'),
@@ -279,7 +272,8 @@ INSERT INTO `user_ecc_keys` (`user_ID`, `public_key`, `encrypted_private_key`) V
 -- Indexes for table `account_otp`
 --
 ALTER TABLE `account_otp`
-  ADD PRIMARY KEY (`challenge_id`);
+  ADD PRIMARY KEY (`challenge_id`),
+  ADD KEY `account_otp_user` (`user_ID`);
 
 --
 -- Indexes for table `courses`
@@ -336,6 +330,21 @@ ALTER TABLE `user`
 --
 ALTER TABLE `user_ecc_keys`
   ADD PRIMARY KEY (`user_ID`);
+
+--
+-- Constraints for current application-owned security tables
+--
+ALTER TABLE `account_otp`
+  ADD CONSTRAINT `account_otp_user_fk` FOREIGN KEY (`user_ID`) REFERENCES `user` (`user_ID`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `user_ecc_keys`
+  ADD CONSTRAINT `user_ecc_keys_user_fk` FOREIGN KEY (`user_ID`) REFERENCES `user` (`user_ID`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `note_messages`
+  ADD CONSTRAINT `note_messages_note_fk` FOREIGN KEY (`noteID`) REFERENCES `notes` (`noteID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `note_messages_student_fk` FOREIGN KEY (`student_ID`) REFERENCES `user` (`user_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `note_messages_faculty_fk` FOREIGN KEY (`faculty_ID`) REFERENCES `user` (`user_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `note_messages_sender_fk` FOREIGN KEY (`sender_ID`) REFERENCES `user` (`user_ID`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- AUTO_INCREMENT for dumped tables

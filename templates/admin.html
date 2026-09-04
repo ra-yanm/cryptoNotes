@@ -5,6 +5,12 @@
 <h1>Administration</h1>
 <p>Manage account roles and course coordinators.</p>
 
+<h2>Encryption</h2>
+<form method="post" action="{{ url_for('admin_rotate_ecc') }}" onsubmit="return confirm('Rotate the ECC key and migrate encrypted data now?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Rotate ECC Key</button>
+</form>
+
 <h2>User types</h2>
 <div class="admin-toolbar">
     <label for="user-search">Search users</label>

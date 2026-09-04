@@ -20,6 +20,7 @@ if not KEY_PASSPHRASE:
     raise RuntimeError("KEY_PASSPHRASE must be set in .env or the environment")
 RSA_FILE = KEY_DIR / "rsa_private.pem"
 ECC_FILE = KEY_DIR / "ecc_private.pem"
+ECC_KEYRING_FILE = KEY_DIR / "ecc_keyring.pem"
 
 
 def _stream(key, length):
@@ -40,11 +41,13 @@ def _write_pem(path, label, payload):
     pem = f"-----BEGIN ENCRYPTED {label}-----\n"
     pem += "\n".join(encoded[index:index + 64] for index in range(0, len(encoded), 64))
     pem += f"\n-----END ENCRYPTED {label}-----\n"
-    path.write_text(pem, encoding="ascii")
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(pem, encoding="ascii")
     try:
-        os.chmod(path, 0o600)
+        os.chmod(temporary_path, 0o600)
     except OSError:
         pass
+    os.replace(temporary_path, path)
 
 
 def _read_pem(path, label):
@@ -81,7 +84,23 @@ def _load_or_create(path, factory):
 
 
 RSA_KEY = _load_or_create(RSA_FILE, RSA)
-ECC_KEY = _load_or_create(ECC_FILE, ECC)
+_legacy_ecc_key = _load_or_create(ECC_FILE, ECC)
+if ECC_KEYRING_FILE.exists():
+    _ecc_keyring = _read_pem(ECC_KEYRING_FILE, "ECC-KEYRING")
+    ECC_KEYS = {
+        key_id: ECC.from_export(key_data)
+        for key_id, key_data in _ecc_keyring["keys"].items()
+    }
+    ECC_ACTIVE_KEY_ID = _ecc_keyring["active"]
+else:
+    ECC_KEYS = {"v1": _legacy_ecc_key}
+    ECC_ACTIVE_KEY_ID = "v1"
+    _write_pem(
+        ECC_KEYRING_FILE,
+        "ECC-KEYRING",
+        {"active": ECC_ACTIVE_KEY_ID, "keys": {"v1": _legacy_ecc_key.export()}},
+    )
+ECC_KEY = ECC_KEYS[ECC_ACTIVE_KEY_ID]
 
 
 def encrypt_user_field(value):
@@ -94,15 +113,47 @@ def decrypt_user_field(value):
     if value.startswith('{"version":2'):
         return RSA_KEY.decrypt(value)
     if value.startswith('{"ephemeral":'):
-        return ECC_KEY.decrypt(value)
+        return decrypt_bulk(value)
     return value
 
 
 def encrypt_bulk(value):
-    return ECC_KEY.encrypt(value) if value is not None else None
+    return encrypt_bulk_with_key(value, ECC_ACTIVE_KEY_ID)
+
+
+def encrypt_bulk_with_key(value, key_id):
+    if value is None:
+        return None
+    payload = json.loads(ECC_KEYS[key_id].encrypt(value))
+    payload["key_id"] = key_id
+    return json.dumps(payload, separators=(",", ":"))
 
 
 def decrypt_bulk(value):
     if value is None or not isinstance(value, str) or not value.startswith('{"ephemeral":'):
         return value
-    return ECC_KEY.decrypt(value)
+    payload = json.loads(value)
+    key_id = payload.get("key_id", "v1")
+    return ECC_KEYS[key_id].decrypt(value)
+
+
+def rotate_ecc_key():
+    """Create and persist a new ECC key while retaining every prior key."""
+    numeric_ids = [
+        int(key_id[1:]) for key_id in ECC_KEYS if key_id.startswith("v") and key_id[1:].isdigit()
+    ]
+    new_id = f"v{max(numeric_ids, default=0) + 1}"
+    new_key = ECC()
+    new_keys = dict(ECC_KEYS)
+    new_keys[new_id] = new_key
+    _write_pem(
+        ECC_KEYRING_FILE,
+        "ECC-KEYRING",
+        {"active": new_id, "keys": {key_id: key.export() for key_id, key in new_keys.items()}},
+    )
+    ECC_KEYS.clear()
+    ECC_KEYS.update(new_keys)
+    global ECC_ACTIVE_KEY_ID, ECC_KEY
+    ECC_ACTIVE_KEY_ID = new_id
+    ECC_KEY = new_key
+    return new_id

@@ -2,13 +2,21 @@ import os
 import hashlib
 import json
 import secrets
+import threading
 from datetime import datetime, timedelta
 from functools import wraps
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 import bcrypt
 from flask_mailman import EmailMessage, Mail
-from key_management import decrypt_bulk, decrypt_user_field, encrypt_bulk, encrypt_user_field
+from key_management import (
+    decrypt_bulk,
+    decrypt_user_field,
+    encrypt_bulk,
+    encrypt_bulk_with_key,
+    encrypt_user_field,
+    rotate_ecc_key,
+)
 from ecc import ECC, decrypt_with, encrypt_for
 
 
@@ -24,6 +32,7 @@ app.config.update(
 )
 mail = Mail(app)
 _secure_storage_ready = False
+_ecc_rotation_lock = threading.Lock()
 ADMIN_USER_ID = "admin"
 ADMIN_PASSWORD = "admin12345"
 ADMIN_EMAIL = "admin@cryptonotes.local"
@@ -496,6 +505,56 @@ def admin_assign_coordinator(admin, course_id):
         return jsonify(error="A faculty user must be selected as coordinator"), 400
     query("UPDATE courses SET coordinator = %s WHERE courseID = %s", (coordinator, course_id))
     return jsonify(message="Course coordinator updated successfully")
+
+
+@app.post("/api/admin/rotate-ecc")
+@admin_only
+def admin_rotate_ecc(admin):
+    """Rotate the application ECC key and migrate all bulk ciphertext."""
+    if not _ecc_rotation_lock.acquire(blocking=False):
+        return jsonify(error="An ECC key rotation is already in progress"), 409
+    try:
+        new_key_id = rotate_ecc_key()
+        migrated = 0
+        content_fields = (
+            ("courses", "courseID", ("title", "description")),
+            ("notes", "noteID", ("title", "note")),
+            ("note_pending", "ID", ("title", "note")),
+            ("note_suggestions", "suggestionID", ("suggestion",)),
+        )
+        for table, key_field, fields in content_fields:
+            rows = query(
+                f"SELECT {key_field}, {', '.join(fields)} FROM {table}",
+                many=True,
+            )
+            for row in rows:
+                for field in fields:
+                    if row[field] is None:
+                        continue
+                    plaintext = decrypt_bulk(row[field])
+                    query(
+                        f"UPDATE {table} SET {field} = %s WHERE {key_field} = %s",
+                        (encrypt_bulk_with_key(plaintext, new_key_id), row[key_field]),
+                    )
+                    migrated += 1
+
+        user_keys = query(
+            "SELECT user_ID, encrypted_private_key FROM user_ecc_keys",
+            many=True,
+        )
+        for row in user_keys:
+            private_key = decrypt_bulk(row["encrypted_private_key"])
+            query(
+                "UPDATE user_ecc_keys SET encrypted_private_key = %s WHERE user_ID = %s",
+                (encrypt_bulk_with_key(private_key, new_key_id), row["user_ID"]),
+            )
+            migrated += 1
+        return jsonify(message="ECC key rotation completed", key_id=new_key_id, migrated=migrated)
+    except Exception:
+        app.logger.exception("ECC key rotation did not complete")
+        return jsonify(error="ECC key rotation did not complete; both key versions were retained"), 500
+    finally:
+        _ecc_rotation_lock.release()
 
 
 @app.get("/api/courses")
