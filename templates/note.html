@@ -24,7 +24,7 @@
             {% endif %}
             </button>
         {% endif %}
-        {% if current_user.is_faculty %}
+        {% if current_user.user_type == 'faculty' %}
         <form action="/hide_note" method="post" >
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="course" value="{{ course }}">
@@ -38,12 +38,12 @@
             {% endif %}
         </form>
         {% endif %}
-        {% if (current_user.is_faculty or current_user.user_type == 'st') and have_suggestion %}
+        {% if (current_user.user_type in ('faculty', 'st')) and have_suggestion %}
             <a href="/approve_suggestion?L={{ noteID }}">
             <button>Approve Suggestions</button>
             </a>
         {% endif %}
-        {% if current_user.is_faculty %}
+        {% if current_user.user_type == 'faculty' %}
         <form action="/deleting" method="get" >
             <input type="hidden" name="L" value="{{ noteID }}">
             <button type="submit" style="color:#fe9797; background-color:#232323">DELETE Note</button>
@@ -61,7 +61,7 @@
         <br>
         <button type="submit" name="buttton" value="suggesting">Submit as Suggestion</button>
 
-        {% if current_user.is_faculty or current_user.user_type=='st' %}
+        {% if current_user.user_type in ('faculty', 'st') %}
             <button type="submit" name="buttton" value="saving">Save</button>
         {% endif %}        
     </form>
@@ -70,7 +70,7 @@
 {% if current_user.user_type in ('student', 'st') or message_data.can_message %}
 <section class="message-panel" aria-labelledby="message-heading">
     <h2 id="message-heading">Question {{ message_data.coordinator_name or 'the course coordinator' }}</h2>
-    {% if message_data.can_message and current_user.is_faculty %}
+    {% if message_data.can_message and current_user.user_type == 'faculty' %}
         <p>Select a student conversation for this note.</p>
         {% if message_data.participants %}
             <div class="message-participants">
@@ -102,7 +102,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="course" value="{{ course }}">
             <input type="hidden" name="noteID" value="{{ noteID }}">
-            {% if current_user.is_faculty %}
+            {% if current_user.user_type == 'faculty' %}
                 <input type="hidden" name="student_id" value="{{ selected_student }}">
             {% endif %}
             <label for="message">Message</label>

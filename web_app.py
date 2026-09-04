@@ -359,6 +359,27 @@ def approve_suggestion():
     )
 
 
+@app.route("/approve_note", methods=["GET", "POST"])
+@login_required
+def approve_note():
+    if session["user"].get("user_type") != "faculty":
+        flash("Only faculty may approve notes.")
+        return redirect(url_for("home"))
+    course_id = request.args.get("course") or request.form.get("courseID")
+    if request.method == "POST":
+        result = api_request(
+            "POST", f"/courses/{course_id}/pending/review",
+            json={"pending_ID": request.form["pending_ID"], "action": request.form["buttton"]},
+        )
+        if result:
+            flash(result["message"])
+        return redirect(url_for("approve_note", course=course_id))
+    result = api_request("GET", f"/courses/{course_id}/pending")
+    if not result:
+        return redirect(url_for("notes", course=course_id))
+    return render_template("approve_notes.html", suggestions=result["pending"], course=course_id)
+
+
 @app.post("/send_message")
 @login_required
 def send_message():

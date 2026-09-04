@@ -665,6 +665,45 @@ def pending_status(user, course_id):
     return jsonify(has_pending=bool(query("SELECT courseID FROM note_pending WHERE courseID = %s", (course_id,))))
 
 
+@app.get("/api/courses/<course_id>/pending")
+@authenticated_user
+def pending_notes(user, course_id):
+    if user["user_type"] != "faculty":
+        return jsonify(error="Only faculty may review pending notes"), 403
+    pending = query(
+        "SELECT ID, courseID, title, note, post_by FROM note_pending "
+        "WHERE courseID = %s ORDER BY ID",
+        (course_id,), many=True,
+    )
+    protected_rows(pending, ("title", "note"))
+    return jsonify(pending=pending)
+
+
+@app.post("/api/courses/<course_id>/pending/review")
+@authenticated_user
+def review_pending_note(user, course_id):
+    if user["user_type"] != "faculty":
+        return jsonify(error="Only faculty may review pending notes"), 403
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if action not in ("approve", "reject"):
+        return jsonify(error="Invalid pending-note action"), 400
+    pending = query(
+        "SELECT ID, courseID, title, note FROM note_pending "
+        "WHERE ID = %s AND courseID = %s",
+        (data.get("pending_ID"), course_id),
+    )
+    if not pending:
+        return jsonify(error="Pending note not found"), 404
+    if action == "approve":
+        query(
+            "INSERT INTO notes (courseID, title, note, student_view) VALUES (%s, %s, %s, %s)",
+            (course_id, pending["title"], pending["note"], 1),
+        )
+    query("DELETE FROM note_pending WHERE ID = %s", (pending["ID"],))
+    return jsonify(message="Note approved" if action == "approve" else "Note rejected")
+
+
 @app.post("/api/notes/<int:note_id>/suggestions")
 @authenticated_user
 def submit_suggestion(user, note_id):
