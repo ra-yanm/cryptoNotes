@@ -155,6 +155,27 @@ def verify_registration():
     return render_template("verify_otp.html", form=form, title="Verify your email")
 
 
+@app.post("/resend-otp")
+def resend_otp():
+    if session.get("login_challenge"):
+        session_key = "login_challenge"
+        purpose = "login"
+        destination = "verify_login"
+    elif session.get("registration_challenge"):
+        session_key = "registration_challenge"
+        purpose = "registration"
+        destination = "verify_registration"
+    else:
+        return redirect(url_for("login"))
+    result = api_request("POST", "/resend-otp", json={
+        "challenge_id": session[session_key], "purpose": purpose,
+    })
+    if result:
+        session[session_key] = result["challenge_id"]
+        flash(result["message"])
+    return redirect(url_for(destination))
+
+
 @app.route("/verify-login", methods=["GET", "POST"])
 def verify_login():
     form = OTPForm()

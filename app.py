@@ -193,6 +193,24 @@ def create_otp(email, purpose, user_id=None, payload=None):
     return challenge_id
 
 
+def resend_otp(challenge_id, purpose):
+    record = query(
+        "SELECT email, user_ID, payload FROM account_otp "
+        "WHERE challenge_id = %s AND purpose = %s AND used_at IS NULL",
+        (challenge_id, purpose),
+    )
+    if not record:
+        return None
+    new_challenge_id = create_otp(
+        record["email"], purpose, record["user_ID"], record["payload"]
+    )
+    query(
+        "UPDATE account_otp SET used_at = %s WHERE challenge_id = %s",
+        (datetime.utcnow(), challenge_id),
+    )
+    return new_challenge_id
+
+
 def valid_otp(challenge_id, otp, purpose):
     record = query(
         "SELECT * FROM account_otp WHERE challenge_id = %s AND purpose = %s AND used_at IS NULL",
@@ -252,9 +270,10 @@ def login():
         if password_matches:
             identity = credentials["identity"]
             user = query("SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id, email_verified FROM user WHERE user_ID = %s OR email = %s", (identity, identity))
-            if user and "password_hash" not in credentials:
-                save_login(user["user_ID"], password)
-                save_login(user["email"], password)
+            if user:
+                password_hash = credentials.get("password_hash", hash_password(password))
+                save_login_hash(user["user_ID"], password_hash)
+                save_login_hash(user["email"], password_hash)
     else:
         user = query(
             "SELECT user_ID, user_type, name, email, department, bio, personal_phn, discord_id, email_verified FROM user "
@@ -285,6 +304,18 @@ def verify_login():
     )
     protected_fields(user, ("bio", "discord_id"))
     return jsonify(user=user)
+
+
+@app.post("/api/resend-otp")
+def resend_otp_api():
+    data = request.get_json(silent=True) or {}
+    purpose = data.get("purpose")
+    if purpose not in ("login", "registration"):
+        return jsonify(error="Invalid OTP purpose"), 400
+    new_challenge_id = resend_otp(str(data.get("challenge_id", "")), purpose)
+    if not new_challenge_id:
+        return jsonify(error="This OTP request is no longer available"), 400
+    return jsonify(message="A new verification code was sent to your email", challenge_id=new_challenge_id)
 
 
 @app.post("/api/register")
@@ -322,6 +353,7 @@ def verify_registration():
         (registration["user_ID"], registration["email"], registration["password_hash"], registration["name"], registration["department"], "student", 1),
     )
     save_login_hash(registration["user_ID"], registration["password_hash"])
+    save_login_hash(registration["email"], registration["password_hash"])
     return jsonify(message="Registration complete. You can now log in.")
 
 

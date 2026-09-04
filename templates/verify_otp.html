@@ -10,5 +10,9 @@
     {% for error in form.otp.errors %}<p>{{ error }}</p>{% endfor %}
     {{ form.submit() }}
 </form>
+<form method="POST" action="{{ url_for('resend_otp') }}">
+    {{ form.hidden_tag() }}
+    <button type="submit">Resend OTP</button>
+</form>
 </main>
 {% endblock %}
