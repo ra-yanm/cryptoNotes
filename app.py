@@ -183,7 +183,7 @@ def create_otp(email, purpose, user_id=None, payload=None):
         (challenge_id, user_id, email, purpose, hashlib.sha256(otp.encode()).hexdigest(), payload,
          datetime.utcnow() + timedelta(minutes=5)),
     )
-    subject = "Your CampusLink verification code"
+    subject = "Your CrytoNotes verification code"
     message = EmailMessage(
         subject=subject,
         body=f"Your {purpose} verification code is {otp}. It expires in 5 minutes.",
