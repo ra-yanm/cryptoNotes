@@ -137,8 +137,10 @@ def user_ecc_key(user_id):
 
 def message_context(note_id, user, student_id=None):
     context = query(
-        "SELECT n.courseID, c.coordinator, n.student_view "
-        "FROM notes n JOIN courses c ON c.courseID = n.courseID WHERE n.noteID = %s",
+        "SELECT n.courseID, c.coordinator, coordinator.name AS coordinator_name, n.student_view "
+        "FROM notes n JOIN courses c ON c.courseID = n.courseID "
+        "JOIN user coordinator ON coordinator.user_ID = c.coordinator "
+        "WHERE n.noteID = %s",
         (note_id,),
     )
     if not context:
@@ -437,7 +439,11 @@ def note_messages(user, note_id):
             "WHERE m.noteID = %s ORDER BY u.name",
             (note_id,), many=True,
         )
-        return jsonify(participants=participants, messages=[])
+        return jsonify(
+            participants=participants,
+            messages=[],
+            coordinator_name=context["coordinator_name"],
+        )
     rows = query(
         "SELECT m.message_id, m.sender_ID, u.name, m.created_at, "
         "m.ciphertext_for_student, m.ciphertext_for_faculty "
@@ -456,7 +462,13 @@ def note_messages(user, note_id):
             "created_at": row["created_at"].isoformat(),
             "message": decrypt_with(key.private_key, row[ciphertext_field]),
         })
-    return jsonify(participants=[], messages=messages, student_ID=context["student_ID"], faculty_ID=context["faculty_ID"])
+    return jsonify(
+        participants=[],
+        messages=messages,
+        student_ID=context["student_ID"],
+        faculty_ID=context["faculty_ID"],
+        coordinator_name=context["coordinator_name"],
+    )
 
 
 @app.post("/api/notes/<int:note_id>/messages")

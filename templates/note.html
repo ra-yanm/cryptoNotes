@@ -69,7 +69,7 @@
 
 {% if current_user.user_type == 'student' or current_user.user_type == 'faculty' %}
 <section class="message-panel" aria-labelledby="message-heading">
-    <h2 id="message-heading">Question the course coordinator</h2>
+    <h2 id="message-heading">Question {{ message_data.coordinator_name or 'the course coordinator' }}</h2>
     {% if current_user.user_type == 'faculty' %}
         <p>Select a student conversation for this note.</p>
         {% if message_data.participants %}
@@ -97,7 +97,8 @@
                 <p>No messages yet. Ask the coordinator a question about this note.</p>
             {% endfor %}
         </div>
-        <form action="{{ url_for('send_message') }}" method="post" class="message-form">
+        <button type="button" class="message-toggle" data-toggle="message-form">Ask a question</button>
+        <form id="message-form" action="{{ url_for('send_message') }}" method="post" class="message-form" style="display:none;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="course" value="{{ course }}">
             <input type="hidden" name="noteID" value="{{ noteID }}">

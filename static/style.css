@@ -28,7 +28,20 @@ main {
     max-width: 850px;
     margin: 0 auto;
     padding: 5rem 2rem 2rem;  
-    
+}
+
+.auth-page {
+    width: min(100%, 420px);
+    margin: 0 auto;
+    text-align: center;
+}
+
+.auth-page > h1 {
+    margin-bottom: 0.35rem;
+}
+
+.auth-page > p {
+    margin-bottom: 1rem;
 }
 #flash-messages {
     position: fixed;
@@ -134,7 +147,8 @@ p:hover {
     padding: 40px;
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-    width: 300px;
+    margin: 0 auto 1rem;
+    width: 100%;
     text-align: center;
 }
 
@@ -148,6 +162,47 @@ p:hover {
 .login-form h2,
 .login-form h4 {
     color: #e0e0e0;
+}
+
+.login-form h4 {
+    margin-top: 0.75rem;
+    text-align: left;
+}
+
+.login-form h4:first-of-type {
+    margin-top: 0;
+}
+
+.login-form label {
+    display: block;
+    margin-top: 0.75rem;
+    text-align: left;
+}
+
+.login-form label:first-of-type {
+    margin-top: 0;
+}
+
+.resend-form {
+    margin-top: 0.75rem;
+    text-align: center;
+}
+
+.resend-form button {
+    background: transparent;
+    border: 1px solid #80d4bd;
+    border-radius: 8px;
+    color: #b0f0dd;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: 0.65rem 1.1rem;
+}
+
+.resend-form button:hover,
+.resend-form button:focus-visible {
+    background: #b0f0dd;
+    color: #15211f;
 }
 
 .login-form input[type="submit"] {
@@ -267,9 +322,10 @@ p:hover {
 .message-panel {
     margin-top: 2rem;
     padding: 1.25rem;
-    background: rgba(20, 28, 27, 0.92);
-    border: 1px solid rgba(176, 240, 221, 0.22);
+    background: #1e1e1e;
+    border: 1px solid rgba(176, 240, 221, 0.35);
     border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
 .message-panel h2 {
@@ -314,8 +370,17 @@ p:hover {
 }
 
 .message-form {
+    margin-top: 15px;
+    padding: 20px;
+    background: #1e1e1e;
+    border-radius: 8px;
     display: grid;
     gap: 0.6rem;
+}
+
+.message-form label {
+    color: #d0e9e1;
+    text-align: left;
 }
 
 .message-form textarea {
@@ -326,6 +391,41 @@ p:hover {
     border: 1px solid #5b8177;
     border-radius: 6px;
     resize: vertical;
+}
+
+.message-form button {
+    justify-self: start;
+    background: #98f5d6;
+    border: 0;
+    border-radius: 8px;
+    color: #121212;
+    cursor: pointer;
+    font: inherit;
+    font-size: 16px;
+    padding: 10px 20px;
+}
+
+.message-form button:hover,
+.message-form button:focus-visible {
+    background: #b2f9e3;
+    box-shadow: 0 0 0 3px rgba(176, 240, 221, 0.2);
+    outline: none;
+}
+
+.message-toggle {
+    background: #98f5d6;
+    border: 0;
+    border-radius: 8px;
+    color: #121212;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 10px 20px;
+}
+
+.message-toggle:hover,
+.message-toggle:focus-visible {
+    background: #b2f9e3;
+    outline: none;
 }
 
 

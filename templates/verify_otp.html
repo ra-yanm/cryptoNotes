@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<main>
-<h1>{{ title }}</h1>
-<p>Enter the six-digit code sent to your email. The code expires in five minutes.</p>
-<form class="login-form" method="POST">
-    {{ form.hidden_tag() }}
-    {{ form.otp.label }}{{ form.otp(inputmode="numeric", autocomplete="one-time-code", placeholder="000000") }}
-    {% for error in form.otp.errors %}<p>{{ error }}</p>{% endfor %}
-    {{ form.submit() }}
-</form>
-<form method="POST" action="{{ url_for('resend_otp') }}">
-    {{ form.hidden_tag() }}
-    <button type="submit">Resend OTP</button>
-</form>
-</main>
+<section class="auth-page">
+    <h1>{{ title }}</h1>
+    <p>Enter the six-digit code sent to your email. The code expires in five minutes.</p>
+    <form class="login-form" method="POST">
+        {{ form.hidden_tag() }}
+        {{ form.otp.label }}{{ form.otp(inputmode="numeric", autocomplete="one-time-code", placeholder="000000") }}
+        {% for error in form.otp.errors %}<p>{{ error }}</p>{% endfor %}
+        {{ form.submit() }}
+    </form>
+    <form class="resend-form" method="POST" action="{{ url_for('resend_otp') }}">
+        {{ form.hidden_tag() }}
+        <button type="submit">Resend OTP</button>
+    </form>
+</section>
 {% endblock %}
