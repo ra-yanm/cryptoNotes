@@ -20,7 +20,7 @@ This project uses three separate Python modules. The implementation is education
 
    `plaintext = ciphertext^d mod n`
 
-Encrypted blocks and their lengths are stored as JSON so they can be placed in a database `TEXT` column.
+Encrypted blocks and their lengths are stored as JSON so they can be placed in a database `TEXT` column. The JSON payload also contains a version and an HMAC-SHA256 tag. The tag covers the complete RSA payload, excluding the tag itself, using a key derived from the RSA private key. Decryption verifies this tag with `hmac.compare_digest()` before processing any RSA blocks.
 
 RSA is used for login credentials because login data is small. The API stores an encrypted JSON object containing the login identity and password.
 
@@ -43,7 +43,7 @@ The resulting bulk ciphertext includes:
 - XOR-encrypted data generated from an HMAC-SHA256 stream
 - An HMAC authentication tag
 
-The authentication tag detects tampering before the value is decrypted.
+The authentication tag detects tampering before the value is decrypted. The tag covers the nonce and ciphertext.
 
 ECC is used for larger fields such as notes, suggestions, course descriptions, bios, and Discord IDs.
 
@@ -56,7 +56,7 @@ This module is the only module imported by the application for normal encryption
 3. Generates RSA and ECC keys on first startup.
 4. Encrypts the exported key data into passphrase-protected PEM files.
 5. Loads and authenticates the same keys on later startups.
-5. Exposes `encrypt_login`, `decrypt_login`, `encrypt_bulk`, and `decrypt_bulk`.
+6. Exposes `encrypt_login`, `decrypt_login`, `encrypt_bulk`, and `decrypt_bulk`.
 
 The key files are `.keys/rsa_private.pem` and `.keys/ecc_private.pem`. The key directory is excluded from Git. Losing these files or the passphrase means previously encrypted data cannot be decrypted, so production deployments should use a protected secret-management system and backups.
 
@@ -98,6 +98,26 @@ Browser
 ```
 
 For reads, the flow reverses: the API retrieves ciphertext, decrypts it through `key_management.py`, and returns plaintext to the existing templates.
+
+## Message Authentication Code (MAC)
+
+The system uses HMAC-SHA256 for integrity and authentication. HMAC is safer and simpler than CBC-MAC for the variable-length JSON and text values stored by this application. It does not require block padding and uses Python's `hmac` and `hashlib` implementations.
+
+ECC bulk values calculate a tag over `nonce + ciphertext` with the key derived from the shared elliptic-curve point. RSA login records calculate a tag over the version, encrypted blocks, and block lengths with a key derived from the RSA private key. Encrypted key files calculate a tag over `salt + nonce + ciphertext` using the passphrase-derived key.
+
+MAC verification occurs on every decryption. The tag is checked with `hmac.compare_digest()` before plaintext is returned or encrypted blocks are processed. Any invalid, missing, or malformed authentication data raises an error and is rejected. The plaintext fallback applies only to database values that are clearly not in the encrypted ECC JSON format, so an authenticated ciphertext failure is never treated as plaintext.
+
+## Implemented Integrity Changes
+
+The integrity requirement was implemented in the following way:
+
+1. Added HMAC-SHA256 authentication to RSA login ciphertext. RSA payloads now include `version`, `blocks`, `lengths`, and `tag` fields.
+2. RSA decryption verifies the tag before decrypting blocks. Missing tags, unsupported versions, and modified payloads are rejected.
+3. Retained the existing HMAC-SHA256 protection for ECC bulk data and encrypted key files.
+4. Changed bulk-data handling so an ECC authentication failure is raised instead of being silently returned as plaintext.
+5. Kept compatibility for legacy database rows that are plainly stored as unencrypted text.
+
+Newly encrypted data is authenticated automatically through `key_management.py`. Existing RSA ciphertext created before this change does not contain a MAC and must be re-encrypted before it can be used with the updated implementation.
 
 ## Verification
 

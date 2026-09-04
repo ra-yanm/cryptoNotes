@@ -99,7 +99,4 @@ def encrypt_bulk(value):
 def decrypt_bulk(value):
     if value is None or not isinstance(value, str) or not value.startswith('{"ephemeral":'):
         return value
-    try:
-        return ECC_KEY.decrypt(value)
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
-        return value
+    return ECC_KEY.decrypt(value)

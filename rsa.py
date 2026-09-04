@@ -1,5 +1,7 @@
 """Small, self-contained RSA implementation for encrypted login records."""
 
+import hashlib
+import hmac
 import json
 import secrets
 
@@ -71,6 +73,14 @@ class RSA:
     def public_key(self):
         return self.public_n, self.e
 
+    def _mac_key(self):
+        key_material = f"{self.n}:{self.d}".encode("ascii")
+        return hashlib.sha256(key_material).digest()
+
+    def _tag(self, payload):
+        message = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hmac.new(self._mac_key(), message, hashlib.sha256).hexdigest()
+
     def encrypt(self, value):
         raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
         limit = (self.public_n.bit_length() - 1) // 8 - 2
@@ -81,10 +91,18 @@ class RSA:
             number = int.from_bytes(len(chunk).to_bytes(2, "big") + chunk, "big")
             blocks.append(pow(number, self.e, self.public_n))
             lengths.append(len(chunk) + 2)
-        return json.dumps({"blocks": blocks, "lengths": lengths}, separators=(",", ":"))
+        payload = {"version": 2, "blocks": blocks, "lengths": lengths}
+        payload["tag"] = self._tag(payload)
+        return json.dumps(payload, separators=(",", ":"))
 
     def decrypt(self, ciphertext):
         payload = json.loads(ciphertext)
+        tag = payload.pop("tag", None)
+        if payload.get("version") != 2 or not isinstance(tag, str):
+            raise ValueError("Unauthenticated RSA ciphertext")
+        expected = self._tag(payload)
+        if not hmac.compare_digest(expected, tag):
+            raise ValueError("RSA authentication failed")
         block_size = (self.n.bit_length() - 1) // 8
         raw = []
         for block, length in zip(payload["blocks"], payload["lengths"]):
