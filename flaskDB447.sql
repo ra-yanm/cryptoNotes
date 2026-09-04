@@ -82,6 +82,30 @@ INSERT INTO `notes` (`courseID`, `noteID`, `title`, `note`, `student_view`) VALU
 -- --------------------------------------------------------
 
 --
+-- Tables for ECC-protected student/faculty note messages
+--
+
+CREATE TABLE IF NOT EXISTS `user_ecc_keys` (
+  `user_ID` varchar(20) NOT NULL,
+  `public_key` text NOT NULL,
+  `encrypted_private_key` text NOT NULL,
+  PRIMARY KEY (`user_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `note_messages` (
+  `message_id` bigint NOT NULL AUTO_INCREMENT,
+  `noteID` int NOT NULL,
+  `student_ID` varchar(20) NOT NULL,
+  `faculty_ID` varchar(20) NOT NULL,
+  `sender_ID` varchar(20) NOT NULL,
+  `ciphertext_for_student` text NOT NULL,
+  `ciphertext_for_faculty` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`message_id`),
+  KEY `note_message_lookup` (`noteID`,`student_ID`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
 -- Table structure for table `note_pending`
 --
 

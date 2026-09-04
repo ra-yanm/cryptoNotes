@@ -47,6 +47,12 @@ The authentication tag detects tampering before the value is decrypted. The tag 
 
 ECC is used for larger fields such as notes, suggestions, course descriptions, bios, and Discord IDs.
 
+### Note Messages
+
+Note questions use per-user ECC key pairs. A key pair is created for a student or faculty member when they first send or open a message conversation. The public key is stored in `user_ecc_keys`, while the private key is encrypted with the application's existing ECC key before it is stored.
+
+Each message is encrypted twice with `ecc.py`: once for the student's public key and once for the course coordinator's public key. This allows both participants to read the conversation while the database stores only ciphertext. Each encrypted copy has its own HMAC-SHA256 tag covering its nonce and ciphertext. The API authorizes access through the note's course coordinator and the authenticated student before decrypting a message for display.
+
 ## `key_management.py`
 
 This module is the only module imported by the application for normal encryption operations. It:

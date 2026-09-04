@@ -212,7 +212,19 @@ def notes():
     note_id = request.args.get("L")
     if note_id:
         result = api_request("GET", f"/notes/{note_id}")
-        return render_template("note.html", notes=result["note"] if result else None, have_suggestion=result["note"].get("have_suggestion", False) if result else False, course=course_id, noteID=note_id)
+        message_result = api_request(
+            "GET", f"/notes/{note_id}/messages",
+            params={"student_id": request.args.get("student")} if request.args.get("student") else {},
+        ) if result else None
+        return render_template(
+            "note.html",
+            notes=result["note"] if result else None,
+            have_suggestion=result["note"].get("have_suggestion", False) if result else False,
+            course=course_id,
+            noteID=note_id,
+            message_data=message_result or {"messages": [], "participants": []},
+            selected_student=request.args.get("student", ""),
+        )
     if course_id:
         result = api_request("GET", f"/courses/{course_id}")
         if not result:
@@ -241,6 +253,19 @@ def submit_suggestion():
     if result:
         flash(result.get("message", "Request complete."))
     return redirect(url_for("notes", course=request.form["course"], L=request.form["noteID"]))
+
+
+@app.post("/send_message")
+@login_required
+def send_message():
+    note_id = request.form["noteID"]
+    result = api_request(
+        "POST", f"/notes/{note_id}/messages",
+        json={"message": request.form["message"], "student_id": request.form.get("student_id")},
+    )
+    if result:
+        flash(result["message"])
+    return redirect(url_for("notes", course=request.form["course"], L=note_id, student=request.form.get("student_id", "")))
 
 
 @app.post("/hide_note")

@@ -73,6 +73,36 @@ def _stream(key, length):
                     for counter in range((length + 31) // 32))[:length]
 
 
+def encrypt_for(public_key, value):
+    """Encrypt value for the owner of public_key using an ephemeral ECC key."""
+    raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+    ephemeral = secrets.randbelow(N - 1) + 1
+    shared = scalar_mult(ephemeral, tuple(public_key))
+    key = hashlib.sha256(shared[0].to_bytes(32, "big")).digest()
+    nonce = secrets.token_bytes(16)
+    ciphertext = bytes(a ^ b for a, b in zip(raw, _stream(key + nonce, len(raw))))
+    tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).hexdigest()
+    return json.dumps({
+        "ephemeral": list(scalar_mult(ephemeral)),
+        "nonce": nonce.hex(),
+        "data": ciphertext.hex(),
+        "tag": tag,
+    }, separators=(",", ":"))
+
+
+def decrypt_with(private_key, ciphertext):
+    """Decrypt and authenticate a payload with the matching private key."""
+    payload = json.loads(ciphertext)
+    shared = scalar_mult(private_key, tuple(payload["ephemeral"]))
+    key = hashlib.sha256(shared[0].to_bytes(32, "big")).digest()
+    nonce = bytes.fromhex(payload["nonce"])
+    data = bytes.fromhex(payload["data"])
+    expected = hmac.new(key, nonce + data, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, payload["tag"]):
+        raise ValueError("ECC authentication failed")
+    return bytes(a ^ b for a, b in zip(data, _stream(key + nonce, len(data)))).decode("utf-8")
+
+
 class ECC:
     def __init__(self, private_key=None):
         # key_management.py restores this key when the website starts.
@@ -91,36 +121,8 @@ class ECC:
 
     def encrypt(self, value):
         # The website uses ECC for larger fields such as notes and profiles.
-        # raw is the original website text represented as UTF-8 bytes.
-        raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-        # ephemeral is a new temporary private key for this one encryption.
-        ephemeral = secrets.randbelow(N - 1) + 1
-        # The ephemeral public key allows the receiver to derive the same key.
-        shared = _multiply(ephemeral, self.public_key)
-        # Both sides derive the same shared point without sending private keys.
-        key = hashlib.sha256(shared[0].to_bytes(32, "big")).digest()
-        # nonce makes the generated HMAC stream unique for this ciphertext.
-        nonce = secrets.token_bytes(16)
-        # XOR the plaintext bytes with the generated stream to produce ciphertext.
-        ciphertext = bytes(a ^ b for a, b in zip(raw, _stream(key + nonce, len(raw))))
-        # The tag detects modified nonce or ciphertext before decryption.
-        tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).hexdigest()
-        # Store all required values as JSON for the database TEXT column.
-        return json.dumps({"ephemeral": list(_multiply(ephemeral)), "nonce": nonce.hex(), "data": ciphertext.hex(), "tag": tag}, separators=(",", ":"))
+        return encrypt_for(self.public_key, value)
 
     def decrypt(self, ciphertext):
         # Called after a website read to recover an encrypted database value.
-        # Read the temporary public point sent with the encrypted value.
-        payload = json.loads(ciphertext)
-        # The receiver combines its private key with that point to get the same key.
-        shared = _multiply(self.private_key, tuple(payload["ephemeral"]))
-        key = hashlib.sha256(shared[0].to_bytes(32, "big")).digest()
-        # Convert the stored hexadecimal strings back into bytes.
-        nonce = bytes.fromhex(payload["nonce"])
-        data = bytes.fromhex(payload["data"])
-        # Verify authenticity before attempting to recover plaintext.
-        expected = hmac.new(key, nonce + data, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, payload["tag"]):
-            raise ValueError("ECC authentication failed")
-        # XOR with the same stream to recover the original UTF-8 text.
-        return bytes(a ^ b for a, b in zip(data, _stream(key + nonce, len(data)))).decode("utf-8")
+        return decrypt_with(self.private_key, ciphertext)

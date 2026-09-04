@@ -9,6 +9,7 @@ from flask import Flask, jsonify, request
 import bcrypt
 from flask_mailman import EmailMessage, Mail
 from key_management import decrypt_bulk, decrypt_login, encrypt_bulk, encrypt_login
+from ecc import ECC, decrypt_with, encrypt_for
 
 
 load_dotenv()
@@ -59,6 +60,26 @@ def ensure_secure_storage(db):
             used_at DATETIME NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_ecc_keys (
+            user_ID VARCHAR(20) PRIMARY KEY,
+            public_key TEXT NOT NULL,
+            encrypted_private_key TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS note_messages (
+            message_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            noteID INT NOT NULL,
+            student_ID VARCHAR(20) NOT NULL,
+            faculty_ID VARCHAR(20) NOT NULL,
+            sender_ID VARCHAR(20) NOT NULL,
+            ciphertext_for_student TEXT NOT NULL,
+            ciphertext_for_faculty TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX note_message_lookup (noteID, student_ID, created_at)
+        )
+    """)
     cursor.execute("ALTER TABLE user ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE")
     for table, columns in {
         "user": "MODIFY email VARCHAR(254), MODIFY password TEXT, MODIFY bio TEXT, MODIFY discord_id TEXT",
@@ -98,6 +119,47 @@ def protected_fields(row, fields):
 
 def protected_rows(rows, fields):
     return [protected_fields(row, fields) for row in rows]
+
+
+def user_ecc_key(user_id):
+    """Load or create the user's ECC key pair used for message encryption."""
+    record = query("SELECT public_key, encrypted_private_key FROM user_ecc_keys WHERE user_ID = %s", (user_id,))
+    if not record:
+        key = ECC()
+        query(
+            "INSERT INTO user_ecc_keys (user_ID, public_key, encrypted_private_key) VALUES (%s, %s, %s)",
+            (user_id, json.dumps(list(key.public_key)), encrypt_bulk(str(key.private_key))),
+        )
+        return key
+    private_key = int(decrypt_bulk(record["encrypted_private_key"]))
+    return ECC(private_key=private_key)
+
+
+def message_context(note_id, user, student_id=None):
+    context = query(
+        "SELECT n.courseID, c.coordinator, n.student_view "
+        "FROM notes n JOIN courses c ON c.courseID = n.courseID WHERE n.noteID = %s",
+        (note_id,),
+    )
+    if not context:
+        return None, (jsonify(error="Note not found"), 404)
+    if user["user_type"] == "faculty":
+        if context["coordinator"] != user["user_ID"]:
+            return None, (jsonify(error="Only the course coordinator may access these messages"), 403)
+        if not student_id:
+            return context, None
+    elif user["user_type"] == "student":
+        if not context["student_view"]:
+            return None, (jsonify(error="This note is not available to students"), 403)
+        student_id = user["user_ID"]
+    else:
+        return None, (jsonify(error="Only students and the course coordinator may use messages"), 403)
+    student = query("SELECT user_ID FROM user WHERE user_ID = %s AND user_type = 'student'", (student_id,))
+    if not student:
+        return None, (jsonify(error="Student not found"), 404)
+    context["student_ID"] = student_id
+    context["faculty_ID"] = context["coordinator"]
+    return context, None
 
 
 def identity_digest(identity):
@@ -328,6 +390,70 @@ def note(user, note_id):
     result["have_suggestion"] = bool(suggestion)
     protected_fields(result, ("title", "note"))
     return jsonify(note=result)
+
+
+@app.get("/api/notes/<int:note_id>/messages")
+@authenticated_user
+def note_messages(user, note_id):
+    context, error = message_context(note_id, user, request.args.get("student_id"))
+    if error:
+        return error
+    if user["user_type"] == "faculty" and "student_ID" not in context:
+        participants = query(
+            "SELECT DISTINCT m.student_ID AS user_ID, u.name "
+            "FROM note_messages m JOIN user u ON u.user_ID = m.student_ID "
+            "WHERE m.noteID = %s ORDER BY u.name",
+            (note_id,), many=True,
+        )
+        return jsonify(participants=participants, messages=[])
+    rows = query(
+        "SELECT m.message_id, m.sender_ID, u.name, m.created_at, "
+        "m.ciphertext_for_student, m.ciphertext_for_faculty "
+        "FROM note_messages m JOIN user u ON u.user_ID = m.sender_ID "
+        "WHERE m.noteID = %s AND m.student_ID = %s ORDER BY m.message_id",
+        (note_id, context["student_ID"]), many=True,
+    )
+    key = user_ecc_key(user["user_ID"])
+    ciphertext_field = "ciphertext_for_student" if user["user_type"] == "student" else "ciphertext_for_faculty"
+    messages = []
+    for row in rows:
+        messages.append({
+            "message_id": row["message_id"],
+            "sender_ID": row["sender_ID"],
+            "sender_name": row["name"],
+            "created_at": row["created_at"].isoformat(),
+            "message": decrypt_with(key.private_key, row[ciphertext_field]),
+        })
+    return jsonify(participants=[], messages=messages, student_ID=context["student_ID"], faculty_ID=context["faculty_ID"])
+
+
+@app.post("/api/notes/<int:note_id>/messages")
+@authenticated_user
+def send_note_message(user, note_id):
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message", "")).strip()
+    if not message or len(message) > 4000:
+        return jsonify(error="Message must contain between 1 and 4000 characters"), 400
+    context, error = message_context(note_id, user, data.get("student_id"))
+    if error:
+        return error
+    if "student_ID" not in context:
+        return jsonify(error="Select a student conversation first"), 400
+    sender_id = user["user_ID"]
+    recipient_id = context["faculty_ID"] if user["user_type"] == "student" else context["student_ID"]
+    sender_key = user_ecc_key(sender_id)
+    recipient_key = user_ecc_key(recipient_id)
+    query(
+        "INSERT INTO note_messages "
+        "(noteID, student_ID, faculty_ID, sender_ID, ciphertext_for_student, ciphertext_for_faculty) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (
+            note_id, context["student_ID"], context["faculty_ID"], sender_id,
+            encrypt_for(sender_key.public_key, message),
+            encrypt_for(recipient_key.public_key, message),
+        ),
+    )
+    return jsonify(message="Message sent")
 
 
 @app.get("/api/notes/<int:note_id>/suggestions/status")
